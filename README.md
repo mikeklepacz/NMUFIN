@@ -14,3 +14,5 @@ Open <http://127.0.0.1:8000>.
 ## Sample data
 
 The repository includes bank-export CSVs under `history_cvs_2026-03-09/`.
+
+<!-- codex-sync-check: 2026-03-10 23:33:15 -->
