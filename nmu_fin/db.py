@@ -8,7 +8,7 @@ from typing import Iterator
 import duckdb
 
 from .account_labels import build_account_label
-from .config import DATA_DIR, DEFAULT_CATEGORIES, get_database_path
+from .config import DATA_DIR, DEFAULT_CATEGORIES, get_database_path, get_database_url
 
 
 SCHEMA_SQL = """
@@ -224,6 +224,19 @@ def normalize_account_labels(conn: duckdb.DuckDBPyConnection) -> None:
 
 @contextmanager
 def connect(db_path: Path | None = None) -> Iterator[duckdb.DuckDBPyConnection]:
+    database_url = get_database_url() if db_path is None else None
+    if database_url:
+        conn = duckdb.connect(":memory:")
+        try:
+            conn.execute("INSTALL postgres")
+            conn.execute("LOAD postgres")
+            conn.execute(f"ATTACH '{database_url}' AS nmu_fin_pg (TYPE POSTGRES)")
+            conn.execute("USE nmu_fin_pg")
+            yield conn
+        finally:
+            conn.close()
+        return
+
     attempts = 0
     last_error: Exception | None = None
     while attempts < 10:
