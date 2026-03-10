@@ -1,0 +1,10 @@
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Local data
+/data/
+*.duckdb
+
+# OS/editor
+.DS_Store

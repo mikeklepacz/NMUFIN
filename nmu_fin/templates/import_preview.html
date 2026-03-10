@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <h2>Import Preview</h2>
+  {% if preview.file_count == 1 %}
+  <p><strong>File:</strong> {{ preview.filename }}</p>
+  <p><strong>Parser:</strong> {{ preview.parser_name }}</p>
+  {% else %}
+  <p><strong>Files:</strong> {{ preview.file_count }}</p>
+  {% endif %}
+  <div class="stats">
+    <span>{{ preview.row_count }} rows</span>
+    <span>{{ preview.duplicate_count }} duplicates</span>
+    <span>{{ preview.ready_count }} ready</span>
+    <span>{{ preview.needs_review_count }} need review</span>
+    <span>{{ preview.fx_pending_count }} FX pending</span>
+  </div>
+  <p class="muted">This preview shows the first imported rows with translated display text where available.</p>
+  <form method="post" action="/imports/commit">
+    <input type="hidden" name="preview_id" value="{{ preview.preview_id }}" />
+    <button type="submit">Commit Import</button>
+  </form>
+</section>
+
+{% if preview.file_count > 1 %}
+<section class="panel">
+  <table>
+    <thead>
+      <tr>
+        <th>File</th><th>Bank</th><th>Parser</th><th>Rows</th><th>Duplicates</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for file_preview in preview.file_previews %}
+      <tr>
+        <td>{{ file_preview.filename }}</td>
+        <td>{{ file_preview.parsed_file.bank_name }}</td>
+        <td>{{ file_preview.parser_name }}</td>
+        <td>{{ file_preview.row_count }}</td>
+        <td>{{ file_preview.duplicate_count }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+<section class="panel">
+  <table>
+    <thead>
+      <tr>
+        {% if preview.file_count > 1 %}
+        <th>File</th>
+        {% endif %}
+        <th>Date</th><th>Description</th><th>Vendor</th><th>Amount</th><th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in preview.rows[:50] %}
+      <tr>
+        {% if preview.file_count > 1 %}
+        <td>{{ row.source_filename }}</td>
+        {% endif %}
+        <td>{{ row.transaction_date }}</td>
+        <td>
+          {{ row.description_en or row.description_raw }}
+          {% if row.description_en and row.description_en != row.description_raw %}
+          <div class="muted compact">{{ row.description_raw }}</div>
+          {% endif %}
+        </td>
+        <td>{{ row.vendor_canonical or row.vendor_raw or "Unknown" }}</td>
+        <td>{{ row.amount_original }} {{ row.currency_original }}</td>
+        <td>{{ row.status }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

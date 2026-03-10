@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <h2>Funding Case</h2>
+  <p class="muted">Investor-facing cash need view: current liquidity, committed obligations, burn baseline, and funding gap.</p>
+  <form class="filters filters-dashboard" method="get">
+    <label>Display currency
+      <select name="currency">
+        {% for option in ["PLN", "USD", "EUR"] %}
+        <option value="{{ option }}" {% if option == currency %}selected{% endif %}>{{ option }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Bank
+      <select name="bank_filter">
+        <option value="">All banks</option>
+        {% for option in bank_options %}
+        <option value="{{ option }}" {% if bank_filter == option %}selected{% endif %}>{{ option }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Burn window (months)
+      <select name="burn_window_months">
+        {% for option in [3, 6, 9, 12] %}
+        <option value="{{ option }}" {% if burn_window_months == option %}selected{% endif %}>{{ option }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit">Refresh</button>
+  </form>
+</section>
+
+<section class="stats stats-dashboard">
+  <article class="panel stat-card">
+    <p class="stat-label">Cash On Hand</p>
+    <h2>{{ funding_case.cash_on_hand | money(currency) }}</h2>
+  </article>
+  <article class="panel stat-card">
+    <p class="stat-label">Open Obligations</p>
+    <h2>{{ funding_case.open_obligations | money(currency) }}</h2>
+  </article>
+  <article class="panel stat-card">
+    <p class="stat-label">Need In 30 Days</p>
+    <h2>{{ funding_case.required_30 | money(currency) }}</h2>
+    <p class="muted compact">Due 30d: {{ funding_case.due_30 | money(currency) }}</p>
+  </article>
+  <article class="panel stat-card">
+    <p class="stat-label">Need In 90 Days</p>
+    <h2>{{ funding_case.required_90 | money(currency) }}</h2>
+    <p class="muted compact">Due 90d: {{ funding_case.due_90 | money(currency) }}</p>
+  </article>
+  <article class="panel stat-card">
+    <p class="stat-label">Funding Gap (30d)</p>
+    <h2>{{ funding_case.funding_gap_30 | money(currency) }}</h2>
+  </article>
+  <article class="panel stat-card">
+    <p class="stat-label">Funding Gap (90d)</p>
+    <h2>{{ funding_case.funding_gap_90 | money(currency) }}</h2>
+  </article>
+  <article class="panel stat-card">
+    <p class="stat-label">Recurring Monthly Cost</p>
+    <h2>{{ funding_case.recurring_monthly_total | money(currency) }}</h2>
+  </article>
+  <article class="panel stat-card">
+    <p class="stat-label">Variable Monthly Avg</p>
+    <h2>{{ funding_case.variable_monthly_avg | money(currency) }}</h2>
+  </article>
+  <article class="panel stat-card">
+    <p class="stat-label">JIT Buffer (P90-Avg)</p>
+    <h2>{{ funding_case.jit_buffer_90 | money(currency) }}</h2>
+  </article>
+  <article class="panel stat-card">
+    <p class="stat-label">Monthly Burn Baseline</p>
+    <h2>{{ funding_case.monthly_burn | money(currency) }}</h2>
+    <p class="muted compact">window: {{ funding_case.burn_window_months }} months</p>
+  </article>
+  <article class="panel stat-card">
+    <p class="stat-label">Runway</p>
+    <h2>{% if funding_case.runway_months is not none %}{{ funding_case.runway_months }} months{% else %}N/A{% endif %}</h2>
+    <p class="muted compact">Avg revenue: {{ funding_case.monthly_revenue | money(currency) }}/month</p>
+  </article>
+</section>
+
+<section class="panel">
+  <h3>JIT Coverage Funding Model (90d)</h3>
+  <table>
+    <thead><tr><th>Component</th><th>Amount ({{ currency }})</th></tr></thead>
+    <tbody>
+      <tr><td>Due obligations in 90 days</td><td>{{ funding_case.due_90 | money(currency) }}</td></tr>
+      <tr><td>Recurring costs next 90 days</td><td>{{ funding_case.recurring_next_90 | money(currency) }}</td></tr>
+      <tr><td>Variable costs next 90 days (avg)</td><td>{{ funding_case.variable_next_90 | money(currency) }}</td></tr>
+      <tr><td>JIT burst buffer (P90 - avg)</td><td>{{ funding_case.jit_buffer_90 | money(currency) }}</td></tr>
+      <tr><th>Total 90-day need (JIT model)</th><th>{{ funding_case.total_need_90_jit | money(currency) }}</th></tr>
+      <tr><th>Funding gap (JIT model, 90d)</th><th>{{ funding_case.funding_gap_90_jit | money(currency) }}</th></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="grid dashboard-grid">
+  <article class="panel">
+    <h3>Recurring Cost Profiles</h3>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Category</th><th>Months Seen</th><th>Avg / month</th><th>Last amount</th><th>Projected 3m</th></tr></thead>
+        <tbody>
+          {% for row in funding_case.recurring_profiles %}
+          <tr>
+            <td>{{ row.category_name }}</td>
+            <td>{{ row.months_seen }}</td>
+            <td>{{ row.avg_monthly | money(currency) }}</td>
+            <td>{{ row.last_amount | money(currency) }}</td>
+            <td>{{ row.projected_3m | money(currency) }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" class="muted">No recurring categories detected yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </article>
+</section>
+
+<section class="grid dashboard-grid">
+  <article class="panel">
+    <h3>Obligations Maturity Ladder</h3>
+    <table>
+      <thead><tr><th>Bucket</th><th>Amount ({{ currency }})</th></tr></thead>
+      <tbody>
+        {% for row in funding_case.obligations_ladder %}
+        <tr><td>{{ row.bucket }}</td><td>{{ row.amount | money(currency) }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </article>
+  <article class="panel">
+    <h3>Open Obligations By Category</h3>
+    <table>
+      <thead><tr><th>Category</th><th>Amount ({{ currency }})</th></tr></thead>
+      <tbody>
+        {% for row in funding_case.obligations_by_category %}
+        <tr><td>{{ row.category_name }}</td><td>{{ row.amount | money(currency) }}</td></tr>
+        {% else %}
+        <tr><td colspan="2" class="muted">No open obligations.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </article>
+</section>
+
+<section class="grid dashboard-grid">
+  <article class="panel">
+    <h3>Cash By Native Currency</h3>
+    <table>
+      <thead><tr><th>Currency</th><th>Total</th></tr></thead>
+      <tbody>
+        {% for row in funding_case.cash_by_currency %}
+        <tr><td>{{ row.currency_original }}</td><td>{{ row.amount | money(row.currency_original) }}</td></tr>
+        {% else %}
+        <tr><td colspan="2" class="muted">No balance history found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </article>
+  <article class="panel">
+    <h3>Open Obligations By Native Currency</h3>
+    <table>
+      <thead><tr><th>Currency</th><th>Total</th></tr></thead>
+      <tbody>
+        {% for row in funding_case.obligations_by_currency %}
+        <tr><td>{{ row.currency_original }}</td><td>{{ row.amount | money(row.currency_original) }}</td></tr>
+        {% else %}
+        <tr><td colspan="2" class="muted">No open obligations.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </article>
+</section>
+
+<section class="panel">
+  <h3>Monthly Trend (Standard Transactions)</h3>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>Month</th><th>Income</th><th>Expenses</th><th>Net</th></tr></thead>
+      <tbody>
+        {% for row in funding_case.monthly_trend %}
+        <tr>
+          <td>{{ row.year_month }}</td>
+          <td>{{ row.income | money(currency) }}</td>
+          <td>{{ row.expenses | money(currency) }}</td>
+          <td>{{ row.net_cash_flow | money(currency) }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="muted">No transaction trend data.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <h3>Investor Narrative</h3>
+  <p>
+    Current cash on hand is <strong>{{ funding_case.cash_on_hand | money(currency) }}</strong>.
+    Committed open obligations are <strong>{{ funding_case.open_obligations | money(currency) }}</strong>.
+    Required cash for the next 90 days is <strong>{{ funding_case.required_90 | money(currency) }}</strong>,
+    which creates a funding gap of <strong>{{ funding_case.funding_gap_90 | money(currency) }}</strong>.
+  </p>
+  <p class="muted">Assumptions: monthly burn uses the trailing {{ funding_case.burn_window_months }} months of standard expenses; exchange transactions are excluded from burn and trend.</p>
+</section>
+{% endblock %}

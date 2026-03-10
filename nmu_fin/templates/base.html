@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NMU FIN</title>
+    <link rel="stylesheet" href="/static/app.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>NMU FIN</h1>
+        <p>Local multi-currency finance analyzer</p>
+      </div>
+      <nav>
+        <a href="/">Dashboard</a>
+        <a href="/funding-case">Funding Case</a>
+        <a href="/imports">Import</a>
+        <a href="/review">Review</a>
+        <a href="/fx">FX Rates</a>
+        <a href="/payables">Payables</a>
+        <a href="/transactions">Transactions</a>
+        <a href="/settings">Settings</a>
+      </nav>
+    </header>
+    <main class="page">
+      {% block content %}{% endblock %}
+    </main>
+    <script>
+      const scrollKey = "nmu-fin-scroll-y";
+
+      function resizePlotlyCharts() {
+        if (!window.Plotly || !window.Plotly.Plots) {
+          return;
+        }
+        document.querySelectorAll(".plotly-graph-div").forEach((chart) => {
+          window.Plotly.Plots.resize(chart);
+        });
+      }
+
+      window.addEventListener("load", () => {
+        const savedScroll = sessionStorage.getItem(scrollKey);
+        if (!savedScroll) {
+          window.requestAnimationFrame(() => {
+            resizePlotlyCharts();
+            setTimeout(resizePlotlyCharts, 150);
+          });
+          return;
+        }
+        sessionStorage.removeItem(scrollKey);
+        window.requestAnimationFrame(() => {
+          window.scrollTo({ top: Number(savedScroll), behavior: "instant" });
+          resizePlotlyCharts();
+          setTimeout(resizePlotlyCharts, 150);
+        });
+      });
+
+      window.addEventListener("resize", () => {
+        resizePlotlyCharts();
+      });
+
+      if (document.fonts && document.fonts.ready) {
+        document.fonts.ready.then(() => {
+          resizePlotlyCharts();
+        });
+      }
+
+      const chartObserver = new ResizeObserver(() => {
+        resizePlotlyCharts();
+      });
+
+      window.addEventListener("DOMContentLoaded", () => {
+        document.querySelectorAll(".chart-frame").forEach((frame) => {
+          chartObserver.observe(frame);
+        });
+      });
+
+      document.querySelectorAll("form[method='post'], form[method='POST']").forEach((form) => {
+        form.addEventListener("submit", () => {
+          sessionStorage.setItem(scrollKey, String(window.scrollY));
+        });
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,288 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  {% set min_year = dashboard.available_years[0] if dashboard.available_years else 2023 %}
+  {% set max_year = dashboard.available_years[-1] if dashboard.available_years else 2026 %}
+  {% set selected_start = year_start if year_start is not none else min_year %}
+  {% set selected_end = year_end if year_end is not none else max_year %}
+  <form class="filters filters-dashboard" method="get">
+    <label>Display currency
+      <select name="currency">
+        {% for option in ["PLN", "USD", "EUR"] %}
+        <option value="{{ option }}" {% if option == currency %}selected{% endif %}>{{ option }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <div class="year-range-control">
+      <strong>Year range</strong>
+      <label>From
+        <select name="year_start">
+          {% for option in dashboard.available_years %}
+          <option value="{{ option }}" {% if selected_start == option %}selected{% endif %}>{{ option }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>To
+        <select name="year_end">
+          <option value="" {% if year_end is none %}selected{% endif %}>Present</option>
+          {% for option in dashboard.available_years %}
+          <option value="{{ option }}" {% if year_end is not none and selected_end == option %}selected{% endif %}>{{ option }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <label>Bank
+      <select name="bank_filter">
+        <option value="">All banks</option>
+        {% for option in dashboard.available_banks %}
+        <option value="{{ option }}" {% if bank_filter == option %}selected{% endif %}>{{ option }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="checkbox">
+      <input type="checkbox" name="include_transfers" value="true" {% if include_transfers %}checked{% endif %} />
+      Include transfers
+    </label>
+    <button type="submit">Refresh</button>
+  </form>
+</section>
+
+<section class="stats stats-dashboard">
+  <article class="panel stat-card">
+    <p class="stat-label">Income</p>
+    <h2>{{ dashboard.yearly_totals.income | money(currency) }}</h2>
+  </article>
+  <article class="panel stat-card">
+    <p class="stat-label">Expenses</p>
+    <h2>{{ dashboard.yearly_totals.expenses | money(currency) }}</h2>
+  </article>
+  <article class="panel stat-card">
+    <p class="stat-label">Net</p>
+    <h2>{{ dashboard.yearly_totals.net | money(currency) }}</h2>
+  </article>
+  <article class="panel stat-card">
+    <p class="stat-label">Avg Monthly Net</p>
+    <h2>{{ dashboard.yearly_totals.avg_monthly_net | money(currency) }}</h2>
+    <p class="muted compact">{{ dashboard.yearly_totals.months_covered }} months</p>
+  </article>
+</section>
+
+<section class="grid dashboard-grid">
+  <article class="panel chart-panel">
+    <h2>Cash Flow Lines</h2>
+    {% if dashboard.cash_flow_chart_html %}
+    <div class="chart-frame">
+      {{ dashboard.cash_flow_chart_html | safe }}
+    </div>
+    <div class="chart-legend chart-legend-centered">
+      <span><i class="legend-swatch legend-income"></i>Income</span>
+      <span><i class="legend-swatch legend-expenses"></i>Expenses</span>
+      <span><i class="legend-swatch legend-net"></i>Net cash flow</span>
+    </div>
+    {% else %}
+    <p class="muted">No monthly cash-flow data yet.</p>
+    {% endif %}
+  </article>
+  <article class="panel chart-panel">
+    <h2>Bank Balance Line</h2>
+    {% if dashboard.bank_balance_chart_html %}
+    <div class="chart-frame">
+      {{ dashboard.bank_balance_chart_html | safe }}
+    </div>
+    {% else %}
+    <p class="muted">Month-end balances will appear after supported bank CSV history is available.</p>
+    {% endif %}
+  </article>
+</section>
+
+<section class="grid dashboard-grid">
+  <article class="panel chart-panel">
+    <h2>Client Income Trends</h2>
+    {% if dashboard.client_income_chart_html %}
+    <div class="chart-frame">
+      {{ dashboard.client_income_chart_html | safe }}
+    </div>
+    {% else %}
+    <p class="muted">No client income history for the current filters.</p>
+    {% endif %}
+  </article>
+  <article class="panel chart-panel">
+    <h2>Client Year Over Year</h2>
+    <form method="get" class="filters narrow compact">
+      <input type="hidden" name="currency" value="{{ currency }}" />
+      <input type="hidden" name="year_start" value="{{ year_start if year_start is not none else '' }}" />
+      <input type="hidden" name="year_end" value="{{ year_end if year_end is not none else '' }}" />
+      <input type="hidden" name="bank_filter" value="{{ bank_filter }}" />
+      <input type="hidden" name="include_transfers" value="{{ 'true' if include_transfers else '' }}" />
+      <label>Client focus
+        <select name="focus_client">
+          <option value="">Top clients</option>
+          {% for option in dashboard.available_clients %}
+          <option value="{{ option }}" {% if focus_client == option %}selected{% endif %}>{{ option }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button type="submit">Apply</button>
+    </form>
+    {% if dashboard.client_yoy_chart_html %}
+    <div class="chart-frame">
+      {{ dashboard.client_yoy_chart_html | safe }}
+    </div>
+    {% else %}
+    <p class="muted">Choose one client and use a multi-year range to compare months across years.</p>
+    {% endif %}
+  </article>
+</section>
+
+<section class="grid dashboard-grid">
+  <article class="panel chart-panel">
+    <h2>Operating Expense Mix</h2>
+    {% if dashboard.category_share_rows %}
+    <div class="share-list">
+      {% for row in dashboard.category_share_rows %}
+      <div class="share-row">
+        <div class="share-row-header">
+          <span>{{ row.label }}</span>
+          <span>{{ row.total | money(currency) }} · {{ row.share_pct }}%</span>
+        </div>
+        <div class="share-bar-track">
+          <div class="share-bar-fill" style="width: {{ row.share_pct }}%"></div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted">No expense category data for the current filters.</p>
+    {% endif %}
+  </article>
+  <article class="panel chart-panel">
+    <h2>Top Suppliers</h2>
+    {% if dashboard.vendor_share_chart_html %}
+    <div class="chart-frame">
+      {{ dashboard.vendor_share_chart_html | safe }}
+    </div>
+    {% else %}
+    <p class="muted">No vendor spend data for the current filters.</p>
+    {% endif %}
+  </article>
+</section>
+
+<section class="grid dashboard-grid">
+  <article class="panel">
+    <h2>Monthly Summary</h2>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Month</th><th>Income</th><th>Expenses</th><th>Net</th></tr></thead>
+          <tbody>
+            {% for row in dashboard.monthly_summary %}
+          <tr><td>{{ row.year_month }}</td><td>{{ row.income | money(currency) }}</td><td>{{ row.expenses | money(currency) }}</td><td>{{ row.net_cash_flow | money(currency) }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+    </div>
+  </article>
+  <article class="panel">
+    <h2>Income Clients</h2>
+    <table>
+      <thead><tr><th>Client</th><th>Total</th></tr></thead>
+      <tbody>
+        {% for row in dashboard.income_client_leaderboard %}
+        <tr><td>{{ row.client_name }}</td><td>{{ row.total | money(currency) }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </article>
+</section>
+
+<section class="grid dashboard-grid">
+  <article class="panel">
+    <h2>Operating Expense Categories</h2>
+    <table>
+      <thead><tr><th>Category</th><th>Total</th></tr></thead>
+      <tbody>
+        {% for row in dashboard.category_breakdown %}
+        <tr><td>{{ row.category_name or "Uncategorized" }}</td><td>{{ row.total | money(currency) }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </article>
+  <article class="panel">
+    <h2>Supplier Leaderboard</h2>
+    <table>
+      <thead><tr><th>Supplier</th><th>Total</th></tr></thead>
+      <tbody>
+        {% for row in dashboard.vendor_leaderboard %}
+        <tr><td>{{ row.vendor }}</td><td>{{ row.total | money(currency) }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </article>
+</section>
+
+<section class="grid dashboard-grid">
+  <article class="panel narrow">
+    <h2>Currency Summary</h2>
+    <table>
+      <thead><tr><th>Currency</th><th>Total</th></tr></thead>
+      <tbody>
+        {% for row in dashboard.currency_summary %}
+        <tr><td>{{ row.currency_original }}</td><td>{{ row.total | money(row.currency_original) }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </article>
+</section>
+
+{% if dashboard.annual_report %}
+<section class="panel">
+  <h2>Annual Actuals Report {{ dashboard.annual_report.year }}</h2>
+  <p class="muted compact">Monthly actuals derived from the normalized transaction data.</p>
+
+  <div class="table-scroll pnl-summary-scroll">
+    <table class="pnl-summary-table">
+      <thead>
+        <tr>
+          <th>Metric</th>
+          {% for month in dashboard.annual_report.months %}
+          <th>{{ month }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for label, values in dashboard.annual_report.summary.items() %}
+        <tr>
+          <th>{{ label|capitalize }}</th>
+          {% for value in values %}
+          <td>{{ value | money(currency) if value is not none else "" }}</td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="table-scroll pnl-matrix-scroll">
+    <table class="pnl-matrix-table">
+      <thead>
+        <tr>
+          <th>Section</th>
+          {% for month in dashboard.annual_report.months %}
+          <th>{{ month }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in dashboard.annual_report.rows %}
+        <tr>
+          <th>{{ row.label }}</th>
+          {% for value in row["values"] %}
+          <td>{{ value | money(currency) if value is not none else "" }}</td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

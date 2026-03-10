@@ -1,0 +1,370 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="review-top-grid">
+<section class="panel">
+  <h2>Review Inbox</h2>
+  <p><strong>{{ review_count }}</strong> transactions still need review.</p>
+  {% if review_count >= limit %}
+  <p class="muted">Showing first {{ limit }} rows. Narrow filters to review faster.</p>
+  {% endif %}
+  {% if review_totals %}
+  <p>
+    <strong>Total value:</strong>
+    {% for total in review_totals %}
+    {{ total.total_amount }} {{ total.currency }}{% if not loop.last %} | {% endif %}
+    {% endfor %}
+  </p>
+  {% endif %}
+  <p class="muted">This page only shows transactions the app could not finish by itself. Each row is here because the vendor, the category, or the FX conversion still needs help.</p>
+  {% if message %}
+  <p class="muted"><strong>{{ message }}</strong></p>
+  {% endif %}
+  {% if vendor_groups %}
+  <div>
+    <strong>Top unresolved vendors</strong>
+    <p class="muted compact">
+      {% for group in vendor_groups %}
+      <a href="{{ group.review_url }}">{{ group.vendor_name }}</a> ({{ group.review_count }}){% if not loop.last %} | {% endif %}
+      {% endfor %}
+    </p>
+  </div>
+  {% endif %}
+  <form method="get" class="filters" id="review-filter-form">
+    <div>
+      <strong>Currency</strong>
+      <label class="checkbox"><input type="checkbox" name="currency_filter" value="USD" {% if currency_filter == "USD" %}checked{% endif %} data-single-group="currency" /> USD</label>
+      <label class="checkbox"><input type="checkbox" name="currency_filter" value="PLN" {% if currency_filter == "PLN" %}checked{% endif %} data-single-group="currency" /> PLN</label>
+      <label class="checkbox"><input type="checkbox" name="currency_filter" value="EUR" {% if currency_filter == "EUR" %}checked{% endif %} data-single-group="currency" /> EUR</label>
+    </div>
+    <div>
+      <strong>Direction</strong>
+      <label class="checkbox"><input type="checkbox" name="direction_filter" value="income" {% if direction_filter == "income" %}checked{% endif %} data-single-group="direction" /> Income</label>
+      <label class="checkbox"><input type="checkbox" name="direction_filter" value="expense" {% if direction_filter == "expense" %}checked{% endif %} data-single-group="direction" /> Expense</label>
+    </div>
+    <label>Sort
+      <select name="sort_by" onchange="document.getElementById('review-filter-form').requestSubmit()">
+        <option value="date_new" {% if sort_by == "date_new" %}selected{% endif %}>Date: newest first</option>
+        <option value="date_old" {% if sort_by == "date_old" %}selected{% endif %}>Date: oldest first</option>
+        <option value="largest" {% if sort_by == "largest" %}selected{% endif %}>Amount: largest first</option>
+        <option value="smallest" {% if sort_by == "smallest" %}selected{% endif %}>Amount: smallest first</option>
+      </select>
+    </label>
+    <label>Vendor
+      <input type="text" name="vendor_filter" value="{{ vendor_filter or '' }}" />
+    </label>
+    <label>Transaction Text
+      <input type="text" name="transaction_filter" value="{{ transaction_filter or '' }}" />
+    </label>
+    <label>Rows
+      <select name="limit">
+        {% for option in [100, 200, 500] %}
+        <option value="{{ option }}" {% if limit == option %}selected{% endif %}>{{ option }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit">Filter</button>
+  </form>
+</section>
+
+{% if items %}
+<section class="panel">
+  <h3>Bulk Apply To Selected</h3>
+  <form method="post" action="/review-bulk-apply" id="review-bulk-form" class="filters">
+    <input type="hidden" name="currency_filter" value="{{ currency_filter or '' }}" />
+    <input type="hidden" name="direction_filter" value="{{ direction_filter or '' }}" />
+    <input type="hidden" name="vendor_filter" value="{{ vendor_filter or '' }}" />
+    <input type="hidden" name="transaction_filter" value="{{ transaction_filter or '' }}" />
+    <input type="hidden" name="sort_by" value="{{ sort_by }}" />
+    <input type="hidden" name="limit" value="{{ limit }}" />
+    <label>Vendor
+      <input type="text" name="vendor_canonical" placeholder="Optional" />
+    </label>
+    <label>Parent Group
+      <select id="bulk-category-bucket-select" name="category_bucket">
+        <option value="income">Income</option>
+        <option value="expense" selected>Expense</option>
+        <option value="exchange">Exchange</option>
+      </select>
+    </label>
+    <label>Category
+      <select id="bulk-category-select" name="category_name"></select>
+    </label>
+    <label class="checkbox"><input type="checkbox" id="select-all-review-items" /> Select all on page</label>
+    <p class="muted compact" id="bulk-selected-count">0 selected</p>
+    <button type="submit">Apply To Selected</button>
+  </form>
+  <p class="muted">Select rows below, then apply vendor/category to all selected transactions at once.</p>
+</section>
+{% endif %}
+</div>
+
+{% for item in items %}
+<section class="panel" id="review-{{ item.id }}">
+  <form method="post" action="/review/{{ item.id }}">
+    <input type="hidden" name="currency_filter" value="{{ currency_filter or '' }}" />
+    <input type="hidden" name="direction_filter" value="{{ direction_filter or '' }}" />
+    <input type="hidden" name="vendor_filter" value="{{ vendor_filter or '' }}" />
+    <input type="hidden" name="transaction_filter" value="{{ transaction_filter or '' }}" />
+    <input type="hidden" name="sort_by" value="{{ sort_by }}" />
+    <input type="hidden" name="limit" value="{{ limit }}" />
+    <input type="hidden" name="previous_vendor_canonical" value="{{ item.vendor_canonical or '' }}" />
+    <div class="review-row">
+      <div>
+        <label class="checkbox"><input type="checkbox" class="review-row-checkbox" form="review-bulk-form" name="transaction_ids" value="{{ item.id }}" /> Select</label>
+        <strong>{{ item.transaction_date }}</strong>
+        <p>{{ item.description_raw }}</p>
+        <p>{{ item.amount_original }} {{ item.currency_original }} | current status: {{ item.status }}</p>
+        <p class="muted compact">Why this is here: {{ item.review_reason }}</p>
+      </div>
+      <div class="form-grid">
+        <label>Vendor
+          <input type="text" name="vendor_canonical" value="{{ item.vendor_canonical or item.vendor_raw or '' }}" required />
+        </label>
+        <label>Parent Group
+          <select
+            class="review-category-bucket-select"
+            data-target="review-category-{{ item.id }}"
+            data-selected="{{ item.category_bucket }}"
+          >
+            <option value="income" {% if item.category_bucket == "income" %}selected{% endif %}>Income</option>
+            <option value="expense" {% if item.category_bucket == "expense" %}selected{% endif %}>Expense</option>
+            <option value="exchange" {% if item.category_bucket == "exchange" %}selected{% endif %}>Exchange</option>
+          </select>
+          <input type="hidden" name="category_bucket" id="review-bucket-value-{{ item.id }}" value="{{ item.category_bucket }}" />
+        </label>
+        <label>Category
+          <select
+            id="review-category-{{ item.id }}"
+            class="review-category-select"
+            data-selected="{{ item.category_name or '' }}"
+          >
+            {% for category in category_options[item.category_bucket] %}
+            <option value="{{ category }}" {% if item.category_name == category %}selected{% endif %}>{{ category }}</option>
+            {% endfor %}
+          </select>
+          <input type="hidden" name="category_name" id="review-category-value-{{ item.id }}" value="{{ item.category_name or '' }}" />
+        </label>
+        <label class="checkbox">
+          <input type="checkbox" name="save_repeat_rule" value="true" />
+          Save as repeat rule for matching future transactions
+        </label>
+      </div>
+    </div>
+    <button type="submit">Apply</button>
+  </form>
+  <form method="post" action="/review/{{ item.id }}/delete" class="inline-form danger-zone">
+    <input type="hidden" name="currency_filter" value="{{ currency_filter or '' }}" />
+    <input type="hidden" name="direction_filter" value="{{ direction_filter or '' }}" />
+    <input type="hidden" name="vendor_filter" value="{{ vendor_filter or '' }}" />
+    <input type="hidden" name="transaction_filter" value="{{ transaction_filter or '' }}" />
+    <input type="hidden" name="sort_by" value="{{ sort_by }}" />
+    <input type="hidden" name="limit" value="{{ limit }}" />
+    <button type="submit">Delete transaction</button>
+  </form>
+</section>
+{% else %}
+<section class="panel"><p>No items need review.</p></section>
+{% endfor %}
+{% if focus_id %}
+<script>
+  const target = document.getElementById("review-{{ focus_id }}");
+  if (target) {
+    target.scrollIntoView({ behavior: "instant", block: "start" });
+  }
+</script>
+{% endif %}
+<script>
+  const reviewCategoryOptions = {{ category_options | tojson }};
+  const filterForm = document.getElementById("review-filter-form");
+  const filterKey = "nmu-fin-review-filters";
+  const currentFilters = {
+    currency_filter: "{{ currency_filter or '' }}",
+    direction_filter: "{{ direction_filter or '' }}",
+    vendor_filter: "{{ vendor_filter or '' }}",
+    transaction_filter: "{{ transaction_filter or '' }}",
+    limit: "{{ limit }}",
+    sort_by: "{{ sort_by }}",
+  };
+  const persistFilters = () => {
+    const formData = new FormData(filterForm);
+    localStorage.setItem(
+      filterKey,
+        JSON.stringify({
+          currency_filter: formData.get("currency_filter") || "",
+          direction_filter: formData.get("direction_filter") || "",
+          vendor_filter: formData.get("vendor_filter") || "",
+          transaction_filter: formData.get("transaction_filter") || "",
+          limit: formData.get("limit") || "200",
+          sort_by: formData.get("sort_by") || "date_new",
+        }),
+    );
+  };
+
+  document.querySelectorAll("input[data-single-group]").forEach((input) => {
+    input.addEventListener("change", () => {
+      if (!input.checked) {
+        persistFilters();
+        filterForm.requestSubmit();
+        return;
+      }
+      document.querySelectorAll(`input[data-single-group="${input.dataset.singleGroup}"]`).forEach((peer) => {
+        if (peer !== input) {
+          peer.checked = false;
+        }
+      });
+      persistFilters();
+      filterForm.requestSubmit();
+    });
+  });
+  const sortSelect = filterForm?.querySelector("select[name='sort_by']");
+  if (sortSelect) {
+    sortSelect.addEventListener("change", persistFilters);
+  }
+
+  if (filterForm) {
+    const savedFilters = JSON.parse(localStorage.getItem(filterKey) || "{}");
+    const vendorInput = filterForm.querySelector("input[name='vendor_filter']");
+    const transactionInput = filterForm.querySelector("input[name='transaction_filter']");
+    const limitSelect = filterForm.querySelector("select[name='limit']");
+    const hasServerFilters = currentFilters.currency_filter || currentFilters.direction_filter || currentFilters.vendor_filter || currentFilters.transaction_filter || currentFilters.sort_by !== "date_new" || currentFilters.limit !== "200";
+    if (!hasServerFilters && (savedFilters.currency_filter || savedFilters.direction_filter || savedFilters.vendor_filter || savedFilters.transaction_filter || savedFilters.sort_by || savedFilters.limit)) {
+      document.querySelectorAll("input[name='currency_filter']").forEach((input) => {
+        input.checked = input.value === savedFilters.currency_filter;
+      });
+      document.querySelectorAll("input[name='direction_filter']").forEach((input) => {
+        input.checked = input.value === savedFilters.direction_filter;
+      });
+      if (vendorInput) {
+        vendorInput.value = savedFilters.vendor_filter || "";
+      }
+      if (transactionInput) {
+        transactionInput.value = savedFilters.transaction_filter || "";
+      }
+      if (sortSelect) {
+        sortSelect.value = savedFilters.sort_by || "date_new";
+      }
+      if (limitSelect) {
+        limitSelect.value = savedFilters.limit || "200";
+      }
+      filterForm.requestSubmit();
+    }
+  }
+
+  function rebuildReviewCategorySelect(select, bucket) {
+    if (!select) return;
+    const options = reviewCategoryOptions[bucket] || [];
+    const selected = select.dataset.selected || "";
+    select.innerHTML = "";
+    for (const option of options) {
+      const element = document.createElement("option");
+      element.value = option;
+      element.textContent = option;
+      if (option === selected) {
+        element.selected = true;
+      }
+      select.appendChild(element);
+    }
+    if (!select.value && options.length > 0) {
+      select.value = options[0];
+    }
+    select.dataset.selected = select.value;
+  }
+
+  document.querySelectorAll(".review-category-bucket-select").forEach((bucketSelect) => {
+    const categorySelect = document.getElementById(bucketSelect.dataset.target);
+    const itemId = (bucketSelect.dataset.target || "").replace("review-category-", "");
+    const categoryMirror = document.getElementById(`review-category-value-${itemId}`);
+    const bucketMirror = document.getElementById(`review-bucket-value-${itemId}`);
+
+    rebuildReviewCategorySelect(categorySelect, bucketSelect.value);
+    if (bucketMirror) {
+      bucketMirror.value = bucketSelect.value;
+    }
+    if (categoryMirror && categorySelect) {
+      categoryMirror.value = categorySelect.value;
+    }
+
+    bucketSelect.addEventListener("change", () => {
+      rebuildReviewCategorySelect(categorySelect, bucketSelect.value);
+      if (bucketMirror) {
+        bucketMirror.value = bucketSelect.value;
+      }
+      if (categoryMirror && categorySelect) {
+        categoryMirror.value = categorySelect.value;
+      }
+    });
+
+    categorySelect?.addEventListener("change", () => {
+      if (categoryMirror) {
+        categoryMirror.value = categorySelect.value;
+      }
+      categorySelect.dataset.selected = categorySelect.value;
+    });
+  });
+
+  const bulkCategoryBucketSelect = document.getElementById("bulk-category-bucket-select");
+  const bulkCategorySelect = document.getElementById("bulk-category-select");
+
+  function rebuildBulkCategorySelect(bucket) {
+    if (!bulkCategorySelect) return;
+    const options = reviewCategoryOptions[bucket] || [];
+    const current = bulkCategorySelect.value;
+    bulkCategorySelect.innerHTML = "";
+    for (const option of options) {
+      const element = document.createElement("option");
+      element.value = option;
+      element.textContent = option;
+      if (option === current) {
+        element.selected = true;
+      }
+      bulkCategorySelect.appendChild(element);
+    }
+    if (!bulkCategorySelect.value && options.length > 0) {
+      bulkCategorySelect.value = options[0];
+    }
+  }
+
+  if (bulkCategoryBucketSelect) {
+    rebuildBulkCategorySelect(bulkCategoryBucketSelect.value);
+    bulkCategoryBucketSelect.addEventListener("change", () => {
+      rebuildBulkCategorySelect(bulkCategoryBucketSelect.value);
+    });
+  }
+
+  const selectAllCheckbox = document.getElementById("select-all-review-items");
+  const bulkForm = document.getElementById("review-bulk-form");
+  const selectedCountNode = document.getElementById("bulk-selected-count");
+  const selectedRowCheckboxes = () => Array.from(document.querySelectorAll(".review-row-checkbox"));
+
+  function refreshSelectedCount() {
+    if (!selectedCountNode) return;
+    const count = selectedRowCheckboxes().filter((input) => input.checked).length;
+    selectedCountNode.textContent = `${count} selected`;
+  }
+
+  selectAllCheckbox?.addEventListener("change", () => {
+    selectedRowCheckboxes().forEach((input) => {
+      input.checked = selectAllCheckbox.checked;
+    });
+    refreshSelectedCount();
+  });
+  selectedRowCheckboxes().forEach((input) => {
+    input.addEventListener("change", refreshSelectedCount);
+  });
+  refreshSelectedCount();
+
+  bulkForm?.addEventListener("submit", (event) => {
+    const count = selectedRowCheckboxes().filter((input) => input.checked).length;
+    if (count === 0) {
+      event.preventDefault();
+      alert("Select at least one transaction first.");
+      return;
+    }
+    const category = document.getElementById("bulk-category-select")?.value || "";
+    const proceed = window.confirm(`Apply bulk update to ${count} selected transaction(s) with category '${category}'?`);
+    if (!proceed) {
+      event.preventDefault();
+    }
+  });
+</script>
+{% endblock %}

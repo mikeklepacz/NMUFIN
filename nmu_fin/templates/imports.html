@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel narrow">
+  <h2>Import CSV</h2>
+  {% if message %}
+  <p><strong>{{ message }}</strong></p>
+  {% endif %}
+  <form method="post" action="/imports/preview" enctype="multipart/form-data" id="import-upload-form">
+    <input type="file" id="csv-file-picker" name="csv_file" accept=".csv" multiple style="position:absolute;left:-9999px" />
+    <input type="file" id="csv-folder-picker" name="csv_folder" webkitdirectory directory multiple style="position:absolute;left:-9999px" />
+    <div class="inline-form">
+      <button type="button" id="add-csv-files">Add CSV files</button>
+      <button type="button" id="add-csv-folder">Add folder</button>
+      <button type="button" id="preview-import-button" disabled>Preview Import</button>
+      <button type="button" id="clear-csv-files" disabled>Clear</button>
+    </div>
+    <p class="muted" id="selected-file-count">No files selected yet.</p>
+    <p class="muted" id="import-upload-error" style="display:none"></p>
+    <table id="selected-file-table" style="display:none">
+      <thead>
+        <tr><th>File</th><th>Action</th></tr>
+      </thead>
+      <tbody id="selected-file-rows"></tbody>
+    </table>
+  </form>
+  <p class="muted">Supported formats: Alior mixed-currency exports and Santander per-currency history exports.</p>
+  <p class="muted">In Chrome on Mac, use Add folder to load every CSV from one folder at once, or Add CSV files to stage files in multiple rounds. Preview Import parses every selected file, translates the preview rows for display, detects duplicates, and shows a combined preview before anything is saved to the database.</p>
+  <form method="post" action="/imports/translations/rebuild" class="inline-form">
+    <button type="submit">Rebuild Existing Translations</button>
+  </form>
+</section>
+
+<section class="panel narrow">
+  <h3>Sample History</h3>
+  <p class="muted">Load the bundled sample CSV history into the app in one step.</p>
+  <form method="post" action="/imports/sample">
+    <button type="submit">Import bundled sample CSVs</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h3>Recent Import Batches</h3>
+  <table>
+    <thead>
+      <tr><th>File</th><th>Imported</th><th>Rows</th><th>Duplicates</th><th>Status</th></tr>
+    </thead>
+    <tbody>
+      {% for batch in batches %}
+      <tr>
+        <td>{{ batch.source_filename }}</td>
+        <td>{{ batch.imported_at }}</td>
+        <td>{{ batch.row_count }}</td>
+        <td>{{ batch.duplicate_count }}</td>
+        <td>{{ batch.status }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5">No imports yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+<script>
+  const importForm = document.getElementById("import-upload-form");
+  const picker = document.getElementById("csv-file-picker");
+  const folderPicker = document.getElementById("csv-folder-picker");
+  const addButton = document.getElementById("add-csv-files");
+  const addFolderButton = document.getElementById("add-csv-folder");
+  const previewButton = document.getElementById("preview-import-button");
+  const clearButton = document.getElementById("clear-csv-files");
+  const selectedFileCount = document.getElementById("selected-file-count");
+  const uploadError = document.getElementById("import-upload-error");
+  const selectedFileTable = document.getElementById("selected-file-table");
+  const selectedFileRows = document.getElementById("selected-file-rows");
+
+  let selectedFiles = [];
+
+  const displayName = (file) => file.webkitRelativePath || file.name;
+  const fileKey = (file) => `${displayName(file)}:${file.size}:${file.lastModified}`;
+  const appendFiles = (files) => {
+    const seen = new Set(selectedFiles.map(fileKey));
+    for (const file of files) {
+      if (!file.name.toLowerCase().endsWith(".csv")) {
+        continue;
+      }
+      if (seen.has(fileKey(file))) {
+        continue;
+      }
+      selectedFiles.push(file);
+      seen.add(fileKey(file));
+    }
+    renderSelectedFiles();
+  };
+
+  const renderSelectedFiles = () => {
+    selectedFileRows.innerHTML = "";
+    selectedFileTable.style.display = selectedFiles.length ? "" : "none";
+    previewButton.disabled = selectedFiles.length === 0;
+    clearButton.disabled = selectedFiles.length === 0;
+    uploadError.style.display = "none";
+    uploadError.textContent = "";
+    selectedFileCount.textContent = selectedFiles.length
+      ? `${selectedFiles.length} file${selectedFiles.length === 1 ? "" : "s"} staged for import.`
+      : "No files selected yet.";
+
+    selectedFiles.forEach((file, index) => {
+      const row = document.createElement("tr");
+      const nameCell = document.createElement("td");
+      nameCell.textContent = displayName(file);
+      const actionCell = document.createElement("td");
+      const removeButton = document.createElement("button");
+      removeButton.type = "button";
+      removeButton.textContent = "Remove";
+      removeButton.dataset.index = String(index);
+      removeButton.addEventListener("click", () => {
+        selectedFiles = selectedFiles.filter((_, fileIndex) => fileIndex !== index);
+        renderSelectedFiles();
+      });
+      actionCell.appendChild(removeButton);
+      row.appendChild(nameCell);
+      row.appendChild(actionCell);
+      selectedFileRows.appendChild(row);
+    });
+  };
+
+  addButton?.addEventListener("click", () => picker?.click());
+  addFolderButton?.addEventListener("click", () => folderPicker?.click());
+
+  picker?.addEventListener("change", () => {
+    appendFiles(Array.from(picker.files || []));
+    picker.value = "";
+  });
+
+  folderPicker?.addEventListener("change", () => {
+    appendFiles(Array.from(folderPicker.files || []));
+    folderPicker.value = "";
+  });
+
+  clearButton?.addEventListener("click", () => {
+    selectedFiles = [];
+    picker.value = "";
+    folderPicker.value = "";
+    renderSelectedFiles();
+  });
+
+  const previewImport = async () => {
+    if (!selectedFiles.length) {
+      return;
+    }
+    previewButton.disabled = true;
+    previewButton.textContent = "Preparing preview...";
+    uploadError.style.display = "none";
+    uploadError.textContent = "";
+    try {
+      const formData = new FormData();
+      selectedFiles.forEach((file) => formData.append("csv_file", file, file.name));
+      const response = await fetch(importForm.action, {
+        method: "POST",
+        body: formData,
+      });
+      const html = await response.text();
+      if (!response.ok) {
+        throw new Error("Preview failed. Please try again.");
+      }
+      document.open();
+      document.write(html);
+      document.close();
+    } catch (error) {
+      uploadError.textContent = error.message || "Preview failed. Please try again.";
+      uploadError.style.display = "block";
+      previewButton.disabled = selectedFiles.length === 0;
+      previewButton.textContent = "Preview Import";
+    }
+  };
+
+  previewButton?.addEventListener("click", previewImport);
+
+  renderSelectedFiles();
+</script>
+{% endblock %}

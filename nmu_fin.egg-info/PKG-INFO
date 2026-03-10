@@ -1,0 +1,33 @@
+Metadata-Version: 2.4
+Name: nmu-fin
+Version: 0.1.0
+Summary: Local multi-currency finance analyzer for CSV bank imports
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: duckdb>=1.2.2
+Requires-Dist: fastapi>=0.116.1
+Requires-Dist: jinja2>=3.1.6
+Requires-Dist: pandas>=2.2.3
+Requires-Dist: plotly>=6.0.1
+Requires-Dist: python-multipart>=0.0.20
+Requires-Dist: uvicorn>=0.35.0
+Provides-Extra: dev
+Requires-Dist: httpx>=0.28.1; extra == "dev"
+Requires-Dist: pytest>=8.4.1; extra == "dev"
+
+# NMU FIN
+
+Local multi-currency finance analyzer for CSV-based transaction imports.
+
+## Run
+
+```bash
+python3 -m pip install -e ".[dev]"
+uvicorn nmu_fin.web:app --reload
+```
+
+Open <http://127.0.0.1:8000>.
+
+## Sample data
+
+The repository includes bank-export CSVs under `history_cvs_2026-03-09/`.

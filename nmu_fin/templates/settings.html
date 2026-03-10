@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel narrow">
+  <h2>Settings</h2>
+  <p class="muted">Manage categories here. Deleting a category moves existing transactions into Uncategorized and removes any saved category auto-fill rules that pointed to it.</p>
+  {% if message %}
+  <p><strong>{{ message }}</strong></p>
+  {% endif %}
+</section>
+
+<section class="panel narrow">
+  <h3>Add Category</h3>
+  <form method="post" action="/settings/categories" class="form-grid">
+    <label>Name
+      <input type="text" name="category_name" required />
+    </label>
+    <label>Parent group
+      <select name="parent_category">
+        <option value="">None</option>
+        <option value="Income">Income</option>
+        <option value="Expenses">Expenses</option>
+        <option value="Exchange">Exchange</option>
+      </select>
+    </label>
+    <button type="submit">Add category</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h3>Existing Categories</h3>
+  <table>
+    <thead>
+      <tr><th>Name</th><th>Parent</th><th>Transactions</th><th>Saved rules</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+      {% for category in categories %}
+      <tr>
+        <td>{{ category.category_name }}</td>
+        <td>{{ category.parent_category or "None" }}</td>
+        <td>{{ category.transaction_count }}</td>
+        <td>{{ category.rule_count }}</td>
+        <td>
+          {% if category.locked %}
+          <span class="muted">Locked</span>
+          {% else %}
+          <form method="post" action="/settings/categories/{{ category.category_id }}/update" class="inline-form">
+            <input type="text" name="category_name" value="{{ category.category_name }}" required />
+            <select name="parent_category">
+              <option value="" {% if not category.parent_category %}selected{% endif %}>None</option>
+              <option value="Income" {% if category.parent_category == "Income" %}selected{% endif %}>Income</option>
+              <option value="Expenses" {% if category.parent_category == "Expenses" %}selected{% endif %}>Expenses</option>
+              <option value="Exchange" {% if category.parent_category == "Exchange" %}selected{% endif %}>Exchange</option>
+            </select>
+            <button type="submit">Save</button>
+          </form>
+          <form method="post" action="/settings/categories/{{ category.category_id }}/delete" class="inline-form danger-zone">
+            <button type="submit">Delete</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="panel narrow">
+  <h3>Automatic Assignment</h3>
+  <p class="muted">Automatic vendor and category assignment is disabled. New imports stay in manual review until you assign them yourself.</p>
+</section>
+{% endblock %}

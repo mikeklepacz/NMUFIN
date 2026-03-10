@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <h2>Accounts Payable</h2>
+  <p class="muted">Track what is currently owed. Matching imported expense payments will auto-mark matching payables as paid.</p>
+  {% if message %}
+  <p><strong>{{ message }}</strong></p>
+  {% endif %}
+</section>
+
+<section class="grid">
+  <article class="panel">
+    <h3>Add Payable</h3>
+    <form method="post" action="/payables/create" class="filters">
+      <label>Vendor
+        <input type="text" name="vendor_canonical" list="payable-vendor-options" autocomplete="off" required />
+      </label>
+      <datalist id="payable-vendor-options">
+        {% for vendor in vendor_options %}
+        <option value="{{ vendor }}"></option>
+        {% endfor %}
+      </datalist>
+      <label>Category
+        <select name="category_name">
+          <option value="">Uncategorized</option>
+          {% for category in categories %}
+          <option value="{{ category }}">{{ category }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Currency
+        <select name="currency_original">
+          <option value="PLN">PLN</option>
+          <option value="USD">USD</option>
+          <option value="EUR">EUR</option>
+        </select>
+      </label>
+      <label>Amount owed
+        <input type="number" step="0.01" min="0.01" name="amount_original" required />
+      </label>
+      <label>Due date
+        <input type="date" name="due_date" required />
+      </label>
+      <label>Note
+        <input type="text" name="note" />
+      </label>
+      <button type="submit">Add payable</button>
+    </form>
+  </article>
+
+  <article class="panel">
+    <h3>Summary</h3>
+    <p><strong>Due in next 30 days</strong></p>
+    {% if summary.due_30 %}
+    <ul>
+      {% for row in summary.due_30 %}
+      <li>{{ row.amount_original }} {{ row.currency_original }}</li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted">No due amounts in next 30 days.</p>
+    {% endif %}
+    <p><strong>By status</strong></p>
+    {% if summary.totals %}
+    <ul>
+      {% for row in summary.totals %}
+      <li>{{ row.status }}: {{ row.amount_original }} {{ row.currency_original }}</li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted">No payables yet.</p>
+    {% endif %}
+  </article>
+</section>
+
+<section class="panel">
+  <h3>Open Items</h3>
+  <form method="get" class="filters">
+    <label>Status
+      <select name="status_filter">
+        <option value="open" {% if status_filter == "open" %}selected{% endif %}>Open</option>
+        <option value="overdue" {% if status_filter == "overdue" %}selected{% endif %}>Overdue</option>
+        <option value="paid" {% if status_filter == "paid" %}selected{% endif %}>Paid</option>
+        <option value="all" {% if status_filter == "all" %}selected{% endif %}>All</option>
+      </select>
+    </label>
+    <button type="submit">Filter</button>
+  </form>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Due</th>
+          <th>Vendor</th>
+          <th>Category</th>
+          <th>Amount</th>
+          <th>Status</th>
+          <th>Linked tx</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in payables %}
+        <tr>
+          <td>{{ row.due_date }}</td>
+          <td>{{ row.vendor_canonical }}</td>
+          <td>{{ row.category_name or "Uncategorized" }}</td>
+          <td>{{ row.amount_original }} {{ row.currency_original }}</td>
+          <td>{{ row.status }}</td>
+          <td>{{ row.linked_transaction_id or "" }}</td>
+          <td>
+            {% if row.status != "paid" %}
+            <form method="post" action="/payables/{{ row.payable_id }}/mark-paid" class="inline-form">
+              <input type="hidden" name="status_filter" value="{{ status_filter }}" />
+              <button type="submit">Mark paid</button>
+            </form>
+            {% endif %}
+            <form method="post" action="/payables/{{ row.payable_id }}/delete" class="inline-form">
+              <input type="hidden" name="status_filter" value="{{ status_filter }}" />
+              <button type="submit">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="muted">No payables for this filter.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <h3>Fixed Cost Trends (PLN)</h3>
+  <p class="muted">Based on historical expense transactions. Use this to forecast wages, rent, insurance, health, and materials.</p>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Category</th>
+          <th>Months seen</th>
+          <th>Avg / month</th>
+          <th>Min month</th>
+          <th>Max month</th>
+          <th>Projected next 3 months</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in fixed_cost_trends %}
+        <tr>
+          <td>{{ row.category_name }}</td>
+          <td>{{ row.months_seen }}</td>
+          <td>{{ row.avg_monthly_pln | money("PLN") }}</td>
+          <td>{{ row.min_monthly_pln | money("PLN") }}</td>
+          <td>{{ row.max_monthly_pln | money("PLN") }}</td>
+          <td>{{ row.projected_next_3m_pln | money("PLN") }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="muted">No matching fixed-cost categories found yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

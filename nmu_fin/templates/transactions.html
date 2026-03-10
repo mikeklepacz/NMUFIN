@@ -1,0 +1,277 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <h2>Transactions</h2>
+  <datalist id="transaction-vendor-options">
+    {% for vendor in vendor_options %}
+    <option value="{{ vendor }}"></option>
+    {% endfor %}
+  </datalist>
+  <div class="transactions-top-grid">
+    <form method="get" class="filters transactions-filters-grid" id="transactions-filter-form">
+      <label class="checkbox transactions-filter-checkbox">
+        <input type="checkbox" name="include_duplicates" value="true" {% if include_duplicates %}checked{% endif %} data-auto-submit="true" />
+        Show duplicates
+      </label>
+      <label>Currency
+        <select name="currency_filter" data-auto-submit="true">
+          <option value="">All</option>
+          {% for option in ["USD", "PLN", "EUR"] %}
+          <option value="{{ option }}" {% if currency_filter == option %}selected{% endif %}>{{ option }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Bank
+        <select name="bank_filter" data-auto-submit="true">
+          <option value="">All banks</option>
+          {% for option in bank_options %}
+          <option value="{{ option }}" {% if bank_filter == option %}selected{% endif %}>{{ option }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Direction
+        <select name="direction_filter" data-auto-submit="true">
+          <option value="">All</option>
+          <option value="income" {% if direction_filter == "income" %}selected{% endif %}>Income</option>
+          <option value="expense" {% if direction_filter == "expense" %}selected{% endif %}>Expense</option>
+        </select>
+      </label>
+      <label>Status
+        <select name="status_filter" data-auto-submit="true">
+          <option value="">All</option>
+          {% for option in ["ready", "needs_review", "duplicate"] %}
+          <option value="{{ option }}" {% if status_filter == option %}selected{% endif %}>{{ option }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Vendor
+        <input type="text" name="vendor_filter" value="{{ vendor_filter or '' }}" list="transaction-vendor-options" autocomplete="off" />
+      </label>
+      <label>Category
+        <select name="category_filter" data-auto-submit="true">
+          <option value="">All</option>
+          {% if category_options["income"] %}
+          <optgroup label="Income">
+            {% for option in category_options["income"] %}
+            <option value="{{ option }}" {% if category_filter == option %}selected{% endif %}>{{ option }}</option>
+            {% endfor %}
+          </optgroup>
+          {% endif %}
+          {% if category_options["expense"] %}
+          <optgroup label="Expenses">
+            {% for option in category_options["expense"] %}
+            <option value="{{ option }}" {% if category_filter == option %}selected{% endif %}>{{ option }}</option>
+            {% endfor %}
+          </optgroup>
+          {% endif %}
+          {% if category_options["exchange"] %}
+          <optgroup label="Exchange">
+            {% for option in category_options["exchange"] %}
+            <option value="{{ option }}" {% if category_filter == option %}selected{% endif %}>{{ option }}</option>
+            {% endfor %}
+          </optgroup>
+          {% endif %}
+        </select>
+      </label>
+      <label>Sort by
+        <select name="sort_by" data-auto-submit="true">
+          <option value="last_modified" {% if sort_by == "last_modified" %}selected{% endif %}>Last modified</option>
+          <option value="date" {% if sort_by == "date" %}selected{% endif %}>Date</option>
+          <option value="bank" {% if sort_by == "bank" %}selected{% endif %}>Bank</option>
+          <option value="vendor" {% if sort_by == "vendor" %}selected{% endif %}>Vendor</option>
+          <option value="category" {% if sort_by == "category" %}selected{% endif %}>Category</option>
+          <option value="amount" {% if sort_by == "amount" %}selected{% endif %}>Amount</option>
+        </select>
+      </label>
+      <label>Order
+        <select name="sort_dir" data-auto-submit="true">
+          <option value="desc" {% if sort_dir == "desc" %}selected{% endif %}>Descending</option>
+          <option value="asc" {% if sort_dir == "asc" %}selected{% endif %}>Ascending</option>
+        </select>
+      </label>
+      <button type="submit">Refresh</button>
+    </form>
+    <div class="transactions-metrics-grid">
+      <article class="panel stat-card">
+        <p class="stat-label">Rows</p>
+        <h2>{{ metrics.row_count }}</h2>
+        <p class="muted compact">Ready {{ metrics.ready_count }} | Review {{ metrics.needs_review_count }} | Duplicates {{ metrics.duplicate_count }}</p>
+      </article>
+      <article class="panel stat-card">
+        <p class="stat-label">Net (Converted)</p>
+        <p>{{ metrics.net_usd | money("USD") }} | {{ metrics.net_pln | money("PLN") }} | {{ metrics.net_eur | money("EUR") }}</p>
+      </article>
+      <article class="panel stat-card">
+        <p class="stat-label">Volume (Abs)</p>
+        <p>{{ metrics.volume_usd | money("USD") }} | {{ metrics.volume_pln | money("PLN") }} | {{ metrics.volume_eur | money("EUR") }}</p>
+      </article>
+      <article class="panel stat-card">
+        <p class="stat-label">Avg Monthly Spend</p>
+        <p>{{ metrics.avg_monthly_spend_usd | money("USD") }} | {{ metrics.avg_monthly_spend_pln | money("PLN") }} | {{ metrics.avg_monthly_spend_eur | money("EUR") }}</p>
+        <p class="muted compact">
+          {% if metrics.months_span > 0 %}
+          {{ metrics.months_span }} months ({{ metrics.period_start }} to {{ metrics.period_end }})
+          {% else %}
+          No date span
+          {% endif %}
+        </p>
+      </article>
+    </div>
+  </div>
+  <p class="muted">Ready: {{ status_counts.ready }} | Needs review: {{ status_counts.needs_review }} | Duplicates hidden: {{ status_counts.duplicate if not include_duplicates else 0 }}</p>
+  <div class="table-scroll">
+  <table class="transactions-table">
+    <thead>
+      <tr><th>Modified</th><th>Date</th><th>Bank</th><th>Description</th><th>Vendor</th><th>Type</th><th>Category</th><th>Currency</th><th>Amount</th><th>Status</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+      {% for row in transactions %}
+      <tr id="transaction-{{ row.id }}">
+        <td>{{ row.updated_at }}</td>
+        <td>{{ row.transaction_date }}</td>
+        <td>{{ row.bank_name }}</td>
+        <td>{{ row.description }}</td>
+        <td>
+          <input
+            type="text"
+            value="{{ row.vendor }}"
+            class="transaction-vendor-input"
+            list="transaction-vendor-options"
+            autocomplete="off"
+            data-form-id="tx-form-{{ row.id }}"
+            data-mirror-id="tx-vendor-{{ row.id }}"
+          />
+        </td>
+        <td>
+          <select
+            class="category-bucket-select"
+            data-target="tx-category-{{ row.id }}"
+            data-form-id="tx-form-{{ row.id }}"
+            data-mirror-id="tx-bucket-{{ row.id }}"
+          >
+            <option value="income" {% if row.category_bucket == "income" %}selected{% endif %}>Income</option>
+            <option value="expense" {% if row.category_bucket == "expense" %}selected{% endif %}>Expense</option>
+            <option value="exchange" {% if row.category_bucket == "exchange" %}selected{% endif %}>Exchange</option>
+          </select>
+        </td>
+        <td>
+            <select
+              id="tx-category-{{ row.id }}"
+              class="transaction-category-select"
+              data-selected="{{ row.category }}"
+              data-form-id="tx-form-{{ row.id }}"
+              data-mirror-id="tx-category-value-{{ row.id }}"
+            >
+              {% for option in category_options[row.category_bucket] %}
+              <option value="{{ option }}" {% if row.category == option %}selected{% endif %}>{{ option }}</option>
+              {% endfor %}
+            </select>
+        </td>
+        <td>{{ row.currency }}</td>
+        <td>{{ row.amount_original }}</td>
+        <td>{{ row.status }}</td>
+        <td>
+          <form method="post" action="/transactions/{{ row.id }}" id="tx-form-{{ row.id }}">
+            <input type="hidden" name="vendor_canonical" id="tx-vendor-{{ row.id }}" value="{{ row.vendor }}" />
+            <input type="hidden" name="category_bucket" id="tx-bucket-{{ row.id }}" value="{{ row.category_bucket }}" />
+            <input type="hidden" name="category_name" id="tx-category-value-{{ row.id }}" value="{{ row.category }}" />
+            <input type="hidden" name="previous_vendor_canonical" value="{{ row.vendor }}" />
+            <input type="hidden" name="include_duplicates" value="{{ 'true' if include_duplicates else '' }}" />
+            <input type="hidden" name="bank_filter" value="{{ bank_filter or '' }}" />
+            <input type="hidden" name="currency_filter" value="{{ currency_filter or '' }}" />
+            <input type="hidden" name="direction_filter" value="{{ direction_filter or '' }}" />
+            <input type="hidden" name="status_filter" value="{{ status_filter or '' }}" />
+            <input type="hidden" name="vendor_filter" value="{{ vendor_filter or '' }}" />
+            <input type="hidden" name="category_filter" value="{{ category_filter or '' }}" />
+            <input type="hidden" name="sort_by" value="{{ sort_by }}" />
+            <input type="hidden" name="sort_dir" value="{{ sort_dir }}" />
+            <button type="submit">Save</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% if focus_id %}
+<script>
+  const target = document.getElementById("transaction-{{ focus_id }}");
+  if (target) {
+    target.scrollIntoView({ behavior: "instant", block: "center" });
+  }
+</script>
+{% endif %}
+<script>
+  const transactionFilterForm = document.getElementById("transactions-filter-form");
+  transactionFilterForm?.querySelectorAll("[data-auto-submit='true']").forEach((input) => {
+    input.addEventListener("change", () => transactionFilterForm.requestSubmit());
+  });
+
+  const transactionCategoryOptions = {{ category_options | tojson }};
+
+  function rebuildTransactionCategorySelect(select, bucket) {
+    if (!select) return;
+    const options = transactionCategoryOptions[bucket] || [];
+    const currentValue = select.value || select.dataset.selected || "";
+    select.innerHTML = "";
+    for (const option of options) {
+      const element = document.createElement("option");
+      element.value = option;
+      element.textContent = option;
+      if (option === currentValue) {
+        element.selected = true;
+      }
+      select.appendChild(element);
+    }
+    if (!select.value && options.length > 0) {
+      select.value = options[0];
+    }
+    select.dataset.selected = select.value;
+  }
+
+  document.querySelectorAll(".category-bucket-select").forEach((bucketSelect) => {
+    const targetId = bucketSelect.dataset.target;
+    const categorySelect = document.getElementById(targetId);
+    const bucketMirror = document.getElementById(bucketSelect.dataset.mirrorId);
+    bucketSelect.addEventListener("change", () => {
+      if (bucketMirror) bucketMirror.value = bucketSelect.value;
+      rebuildTransactionCategorySelect(categorySelect, bucketSelect.value);
+      const categoryMirror = document.getElementById(categorySelect.dataset.mirrorId);
+      if (categoryMirror) categoryMirror.value = categorySelect.value;
+      const form = document.getElementById(bucketSelect.dataset.formId);
+      form?.requestSubmit();
+    });
+  });
+
+  document.querySelectorAll(".transaction-category-select").forEach((categorySelect) => {
+    categorySelect.addEventListener("change", () => {
+      categorySelect.dataset.selected = categorySelect.value;
+      const mirror = document.getElementById(categorySelect.dataset.mirrorId);
+      if (mirror) mirror.value = categorySelect.value;
+      const form = document.getElementById(categorySelect.dataset.formId);
+      form?.requestSubmit();
+    });
+  });
+
+  document.querySelectorAll(".transaction-vendor-input").forEach((vendorInput) => {
+    const mirror = document.getElementById(vendorInput.dataset.mirrorId);
+    vendorInput.addEventListener("input", () => {
+      if (mirror) mirror.value = vendorInput.value;
+    });
+    vendorInput.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      const form = document.getElementById(vendorInput.dataset.formId);
+      form?.requestSubmit();
+    });
+    vendorInput.addEventListener("blur", () => {
+      const form = document.getElementById(vendorInput.dataset.formId);
+      const previous = form?.querySelector("input[name='previous_vendor_canonical']");
+      if (form && previous && vendorInput.value.trim() !== previous.value.trim()) {
+        form.requestSubmit();
+      }
+    });
+  });
+</script>
+{% endblock %}

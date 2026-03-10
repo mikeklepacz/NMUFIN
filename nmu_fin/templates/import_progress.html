@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel narrow">
+  <h2>{{ headline or "Import Progress" }}</h2>
+  {% if job.filename %}
+  <p><strong>File:</strong> {{ job.filename }}</p>
+  {% endif %}
+  <p><strong>Status:</strong> <span id="job-status">{{ job.status }}</span></p>
+  <p><strong>Stage:</strong> <span id="job-stage">{{ job.stage }}</span></p>
+  <p><strong>Progress:</strong> <span id="job-progress">{{ job.processed_rows }}</span>/<span id="job-total">{{ job.total_rows }}</span> <span id="job-label">rows</span></p>
+  <p id="job-error" class="muted"{% if not job.error %} style="display:none"{% endif %}>{{ job.error or "" }}</p>
+  <p id="job-complete" class="muted" {% if job.status != "completed" %}style="display:none"{% endif %}>Import complete. Redirecting…</p>
+</section>
+<script>
+  const jobId = "{{ job.job_id }}";
+  const statusEl = document.getElementById("job-status");
+  const stageEl = document.getElementById("job-stage");
+  const progressEl = document.getElementById("job-progress");
+  const totalEl = document.getElementById("job-total");
+  const labelEl = document.getElementById("job-label");
+  const errorEl = document.getElementById("job-error");
+  const completeEl = document.getElementById("job-complete");
+
+  const progressLabel = (stage) => {
+    if ((stage || "").toLowerCase().includes("import")) {
+      return "rows imported";
+    }
+    if ((stage || "").toLowerCase().includes("translat")) {
+      return "rows translated";
+    }
+    return "rows processed";
+  };
+
+  const poll = async () => {
+    const response = await fetch(`/imports/jobs/${jobId}/status`, { cache: "no-store" });
+    if (!response.ok) {
+      return;
+    }
+    const job = await response.json();
+    statusEl.textContent = job.status;
+    stageEl.textContent = job.stage;
+    progressEl.textContent = job.processed_rows;
+    totalEl.textContent = job.total_rows;
+    labelEl.textContent = progressLabel(job.stage);
+
+    if (job.error) {
+      errorEl.textContent = job.error;
+      errorEl.style.display = "block";
+    }
+
+    if (job.status === "completed" && job.redirect_url) {
+      completeEl.style.display = "block";
+      window.location.assign(job.redirect_url);
+      return;
+    }
+
+    if (job.status !== "failed") {
+      window.setTimeout(poll, 1000);
+    }
+  };
+
+  window.setTimeout(poll, 1000);
+</script>
+{% endblock %}
