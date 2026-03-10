@@ -45,9 +45,7 @@ RECURRING_KEYWORDS = (
     "INTERNET",
     "INSURANCE",
     "HEALTH",
-    "WAGE",
     "SALARY",
-    "PAYROLL",
     "SUBSCRIPTION",
     "SOFTWARE",
     "LEASE",
@@ -274,6 +272,8 @@ def get_funding_case_data(display_currency: str = "PLN", bank_filter: str | None
     month_count = len(month_keys) or 1
     monthly_by_category: dict[str, dict[str, float]] = {}
     for year_month, category_name, total_expense in expense_category_rows:
+        if year_month not in month_keys:
+            continue
         category_map_for_month = monthly_by_category.setdefault(category_name, {})
         category_map_for_month[year_month] = float(total_expense or 0.0)
 
@@ -283,24 +283,23 @@ def get_funding_case_data(display_currency: str = "PLN", bank_filter: str | None
     for category_name, category_month_map in monthly_by_category.items():
         upper = category_name.upper()
         months_seen = len(category_month_map)
-        avg_active = round(sum(category_month_map.values()) / months_seen, 2) if months_seen else 0.0
+        avg_window = round(sum(category_month_map.get(ym, 0.0) for ym in month_keys) / month_count, 2) if month_count else 0.0
         last_month = max(category_month_map.keys()) if category_month_map else None
         last_amount = category_month_map[last_month] if last_month else 0.0
         keyword_recurring = any(token in upper for token in RECURRING_KEYWORDS)
         keyword_variable = any(token in upper for token in VARIABLE_KEYWORDS)
-        coverage_ratio = months_seen / month_count
-        is_recurring = keyword_recurring or (not keyword_variable and months_seen >= 4 and coverage_ratio >= 0.5)
+        is_recurring = keyword_recurring and not keyword_variable
         if is_recurring:
             recurring_profiles.append(
                 {
                     "category_name": category_name,
                     "months_seen": months_seen,
-                    "avg_monthly": avg_active,
+                    "avg_monthly": avg_window,
                     "last_amount": round(last_amount, 2),
-                    "projected_3m": round(avg_active * 3, 2),
+                    "projected_3m": round(avg_window * 3, 2),
                 }
             )
-            recurring_monthly_total += avg_active
+            recurring_monthly_total += avg_window
         else:
             for ym in month_keys:
                 monthly_variable_totals[ym] = round(monthly_variable_totals.get(ym, 0.0) + category_month_map.get(ym, 0.0), 2)

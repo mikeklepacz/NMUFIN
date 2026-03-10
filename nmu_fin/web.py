@@ -4,7 +4,9 @@ from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass
 from datetime import date
 from pathlib import Path
+import subprocess
 from threading import Thread
+from urllib.parse import quote
 import uuid
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
@@ -12,6 +14,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from .config import ROOT_DIR, get_app_password, sign_auth_token
 from .db import init_db
 from .services.bootstrap import import_sample_history, list_import_batches, sample_transaction_dates
 from .services.fx import fetch_nbp_rates, get_rate_coverage, list_rates, upsert_manual_rates
@@ -137,6 +140,85 @@ templates.env.filters["money"] = format_money
 app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
 app.state.previews: dict[str, ImportPreview] = {}
 app.state.import_jobs: dict[str, ImportJob] = {}
+
+AUTH_COOKIE_NAME = "nmu_fin_auth"
+AUTH_COOKIE_PAYLOAD = "authenticated"
+AUTH_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365
+
+
+def is_authenticated(request: Request) -> bool:
+    token = request.cookies.get(AUTH_COOKIE_NAME, "")
+    expected = sign_auth_token(AUTH_COOKIE_PAYLOAD)
+    return bool(token) and token == expected
+
+
+def git_status_snapshot() -> dict:
+    try:
+        branch = subprocess.run(
+            ["git", "branch", "--show-current"],
+            cwd=ROOT_DIR,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        porcelain = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=ROOT_DIR,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.splitlines()
+    except subprocess.CalledProcessError:
+        return {"available": False, "branch": "", "changes": 0}
+    return {"available": True, "branch": branch, "changes": len([line for line in porcelain if line.strip()])}
+
+
+@app.middleware("http")
+async def require_login(request: Request, call_next):
+    path = request.url.path
+    if path.startswith("/static") or path in {"/login", "/favicon.ico"}:
+        return await call_next(request)
+    if is_authenticated(request):
+        return await call_next(request)
+    next_target = quote(str(request.url.path) + (f"?{request.url.query}" if request.url.query else ""), safe="/?=&")
+    return RedirectResponse(url=f"/login?next={next_target}", status_code=303)
+
+
+@app.get("/login", response_class=HTMLResponse)
+def login_page(request: Request, next: str = "/", message: str | None = None) -> HTMLResponse:
+    if is_authenticated(request):
+        return RedirectResponse(url=next or "/", status_code=303)
+    return templates.TemplateResponse(
+        request,
+        "login.html",
+        {
+            "request": request,
+            "next": next or "/",
+            "message": message or "",
+        },
+    )
+
+
+@app.post("/login")
+def login_submit(password: str = Form(...), next: str = Form(default="/")) -> RedirectResponse:
+    if password != get_app_password():
+        return RedirectResponse(url=f"/login?message=Invalid%20password&next={quote(next, safe='/?=&')}", status_code=303)
+    response = RedirectResponse(url=next or "/", status_code=303)
+    response.set_cookie(
+        key=AUTH_COOKIE_NAME,
+        value=sign_auth_token(AUTH_COOKIE_PAYLOAD),
+        max_age=AUTH_COOKIE_MAX_AGE_SECONDS,
+        httponly=True,
+        samesite="lax",
+    )
+    return response
+
+
+@app.post("/logout")
+def logout() -> RedirectResponse:
+    response = RedirectResponse(url="/login?message=Logged%20out", status_code=303)
+    response.delete_cookie(AUTH_COOKIE_NAME)
+    return response
 @app.get("/", response_class=HTMLResponse)
 def dashboard(
     request: Request,
@@ -602,6 +684,7 @@ def settings_page(request: Request, message: str | None = None) -> HTMLResponse:
             "saved_rules": get_saved_rules(),
             "parent_options": ["Income", "Expenses", "Exchange", ""],
             "message": message,
+            "git_status": git_status_snapshot(),
         },
     )
 @app.post("/settings/categories")
@@ -631,6 +714,48 @@ def settings_delete_category(category_id: int) -> RedirectResponse:
 def settings_clear_rules() -> RedirectResponse:
     clear_saved_rules()
     return RedirectResponse(url="/settings?message=Saved%20rules%20cleared", status_code=303)
+
+
+@app.post("/settings/git/push")
+def settings_git_push(
+    commit_message: str = Form(default="Update from NMU FIN UI"),
+    remote_name: str = Form(default="origin"),
+) -> RedirectResponse:
+    try:
+        subprocess.run(["git", "add", "-A"], cwd=ROOT_DIR, check=True, capture_output=True, text=True)
+        staged_clean = subprocess.run(
+            ["git", "diff", "--cached", "--quiet"],
+            cwd=ROOT_DIR,
+            check=False,
+        ).returncode == 0
+        if staged_clean:
+            return RedirectResponse(url="/settings?message=No%20changes%20to%20commit", status_code=303)
+        subprocess.run(
+            ["git", "commit", "-m", commit_message.strip() or "Update from NMU FIN UI"],
+            cwd=ROOT_DIR,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        branch = subprocess.run(
+            ["git", "branch", "--show-current"],
+            cwd=ROOT_DIR,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        subprocess.run(
+            ["git", "push", remote_name.strip() or "origin", branch],
+            cwd=ROOT_DIR,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return RedirectResponse(url=f"/settings?message={quote(f'Pushed {branch} to {remote_name}')}", status_code=303)
+    except subprocess.CalledProcessError as exc:
+        stderr = (exc.stderr or "").strip().splitlines()
+        reason = stderr[-1] if stderr else str(exc)
+        return RedirectResponse(url=f"/settings?message={quote(f'Git push failed: {reason}')}", status_code=303)
 
 
 @app.get("/payables", response_class=HTMLResponse)

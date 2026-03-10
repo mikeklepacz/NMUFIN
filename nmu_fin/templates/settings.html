@@ -68,4 +68,22 @@
   <h3>Automatic Assignment</h3>
   <p class="muted">Automatic vendor and category assignment is disabled. New imports stay in manual review until you assign them yourself.</p>
 </section>
+
+<section class="panel narrow">
+  <h3>GitHub Sync</h3>
+  {% if git_status.available %}
+  <p class="muted">Branch: {{ git_status.branch }} | Uncommitted changes: {{ git_status.changes }}</p>
+  <form method="post" action="/settings/git/push" class="filters">
+    <label>Commit message
+      <input type="text" name="commit_message" value="Update from NMU FIN UI" />
+    </label>
+    <label>Remote
+      <input type="text" name="remote_name" value="origin" />
+    </label>
+    <button type="submit">Commit + Push To GitHub</button>
+  </form>
+  {% else %}
+  <p class="muted">Git repository is not available in this app directory.</p>
+  {% endif %}
+</section>
 {% endblock %}
