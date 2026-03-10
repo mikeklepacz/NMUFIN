@@ -35,6 +35,10 @@ def get_database_path() -> Path:
     return Path(override) if override else DATABASE_PATH
 
 
+def get_database_url() -> str | None:
+    return os.environ.get("NMU_FIN_DATABASE_URL") or os.environ.get("DATABASE_URL")
+
+
 def get_app_password() -> str:
     return os.environ.get("NMU_FIN_APP_PASSWORD", "Hemp12#$")
 
