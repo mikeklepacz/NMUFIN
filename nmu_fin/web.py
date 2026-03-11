@@ -168,7 +168,7 @@ def git_status_snapshot() -> dict:
             text=True,
             check=True,
         ).stdout.splitlines()
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, FileNotFoundError):
         return {"available": False, "branch": "", "changes": 0}
     return {"available": True, "branch": branch, "changes": len([line for line in porcelain if line.strip()])}
 
@@ -756,6 +756,8 @@ def settings_git_push(
         stderr = (exc.stderr or "").strip().splitlines()
         reason = stderr[-1] if stderr else str(exc)
         return RedirectResponse(url=f"/settings?message={quote(f'Git push failed: {reason}')}", status_code=303)
+    except FileNotFoundError:
+        return RedirectResponse(url="/settings?message=Git%20is%20not%20available%20in%20this%20environment", status_code=303)
 
 
 @app.get("/payables", response_class=HTMLResponse)
