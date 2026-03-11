@@ -16,12 +16,14 @@
     </div>
     <p class="muted" id="selected-file-count">No files selected yet.</p>
     <p class="muted" id="import-upload-error" style="display:none"></p>
-    <table id="selected-file-table" style="display:none">
-      <thead>
-        <tr><th>File</th><th>Action</th></tr>
-      </thead>
-      <tbody id="selected-file-rows"></tbody>
-    </table>
+    <div class="table-scroll">
+      <table id="selected-file-table" style="display:none">
+        <thead>
+          <tr><th>File</th><th>Action</th></tr>
+        </thead>
+        <tbody id="selected-file-rows"></tbody>
+      </table>
+    </div>
   </form>
   <p class="muted">Supported formats: Alior mixed-currency exports and Santander per-currency history exports.</p>
   <p class="muted">In Chrome on Mac, use Add folder to load every CSV from one folder at once, or Add CSV files to stage files in multiple rounds. Preview Import parses every selected file, translates the preview rows for display, detects duplicates, and shows a combined preview before anything is saved to the database.</p>
@@ -40,24 +42,26 @@
 
 <section class="panel">
   <h3>Recent Import Batches</h3>
-  <table>
-    <thead>
-      <tr><th>File</th><th>Imported</th><th>Rows</th><th>Duplicates</th><th>Status</th></tr>
-    </thead>
-    <tbody>
-      {% for batch in batches %}
-      <tr>
-        <td>{{ batch.source_filename }}</td>
-        <td>{{ batch.imported_at }}</td>
-        <td>{{ batch.row_count }}</td>
-        <td>{{ batch.duplicate_count }}</td>
-        <td>{{ batch.status }}</td>
-      </tr>
-      {% else %}
-      <tr><td colspan="5">No imports yet.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>File</th><th>Imported</th><th>Rows</th><th>Duplicates</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+        {% for batch in batches %}
+        <tr>
+          <td>{{ batch.source_filename }}</td>
+          <td>{{ batch.imported_at }}</td>
+          <td>{{ batch.row_count }}</td>
+          <td>{{ batch.duplicate_count }}</td>
+          <td>{{ batch.status }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5">No imports yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </section>
 <script>
   const importForm = document.getElementById("import-upload-form");
