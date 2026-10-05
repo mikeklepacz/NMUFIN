@@ -5,7 +5,7 @@ from __future__ import annotations
 from bisect import bisect_right
 from collections import defaultdict
 from datetime import date, datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 import re
 
 
@@ -84,7 +84,17 @@ def _matching_summary(rows: list[dict], start: date, end: date) -> dict[str, int
                 return False
             outgoing = abs(next(leg["amount"] for leg in legs if leg["amount"] < 0))
             incoming = next(leg["amount"] for leg in legs if leg["amount"] > 0)
-            return min(abs(outgoing * rate - incoming), abs(outgoing / rate - incoming)) <= CENT
+            # The bank may fix the received amount (for example, PLN 1,200)
+            # and round the debited foreign-currency amount to cents. Comparing
+            # only the received side would reject a valid pair by up to half a
+            # source-currency cent times the quoted rate.
+            def reconciles(source: Decimal, target: Decimal) -> bool:
+                return (
+                    (source * rate).quantize(CENT, rounding=ROUND_HALF_UP) == target
+                    or (target / rate).quantize(CENT, rounding=ROUND_HALF_UP) == source
+                )
+
+            return reconciles(outgoing, incoming) or reconciles(incoming, outgoing)
         return legs[0]["currency"] == legs[1]["currency"] and abs(legs[0]["amount"]) == abs(legs[1]["amount"])
 
     return {

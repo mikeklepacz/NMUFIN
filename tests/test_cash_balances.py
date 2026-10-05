@@ -81,6 +81,19 @@ def test_fx_reference_with_wrong_bank_rate_needs_review() -> None:
     assert summary["named_fx_needing_review"] == 1
 
 
+def test_fx_reference_accepts_bank_rounded_source_amount() -> None:
+    description = "00133328260219787358 - Transakcja eFX kurs: 3.5681000"
+    rows = [
+        {"date": date(2026, 2, 19), "account": "USD", "currency": "USD",
+         "amount": Decimal("-336.31"), "description": description, "type": "exchange"},
+        {"date": date(2026, 2, 19), "account": "PLN", "currency": "PLN",
+         "amount": Decimal("1200.00"), "description": description, "type": "exchange"},
+    ]
+    summary = _matching_summary(rows, date(2026, 1, 1), date(2026, 12, 31))
+    assert summary["named_fx_pairs"] == 1
+    assert summary["named_fx_needing_review"] == 0
+
+
 def test_fx_round_trip_can_return_to_same_balance_with_verified_source_order() -> None:
     rows = [
         {"id": 10, "batch": "one", "amount": -1400, "balance": 655.40},
