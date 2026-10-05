@@ -10,6 +10,7 @@ from ..account_labels import build_account_label
 from ..db import connect
 from ..normalization import normalize_row
 from ..parsers import ParsedFile, parse_known_csv
+from .import_storage import import_transaction
 from .rules import apply_rules, get_category_id, is_category_compatible
 from .fx import convert_amount_with_rates, get_rate_map_for_dates
 from .payables import _reconcile_open_payables_for_transactions
@@ -104,11 +105,27 @@ def coerce_upload_sources(filename_or_files: str | list[UploadSource], content: 
 
 def load_preview_context(parsed_files: list[ParsedFile]) -> tuple[set[str], dict[date, dict[tuple[str, str], float]]]:
     unique_dates = sorted({row.transaction_date.date() for parsed in parsed_files for row in parsed.rows})
+    candidate_hashes = sorted({
+        normalize_row(
+            transaction_date=row.transaction_date.date(),
+            posting_date=row.posting_date.date(),
+            account_id=parsed.account_id,
+            description=row.description,
+            vendor_raw=row.vendor_raw,
+            amount_original=row.amount_original,
+            currency_original=row.currency_original,
+        ).dedupe_hash
+        for parsed in parsed_files for row in parsed.rows
+    })
     with connect() as conn:
-        existing_hashes = {
-            row[0]
-            for row in conn.execute("SELECT dedupe_hash FROM transactions").fetchall()
-        }
+        existing_hashes: set[str] = set()
+        for offset in range(0, len(candidate_hashes), 500):
+            chunk = candidate_hashes[offset:offset + 500]
+            placeholders = ",".join("?" for _ in chunk)
+            existing_hashes.update(row[0] for row in conn.execute(
+                f"SELECT dedupe_hash FROM transactions WHERE dedupe_hash IN ({placeholders})",
+                chunk,
+            ).fetchall())
         rate_rows = get_rate_map_for_dates(conn, unique_dates)
     rates_by_date: dict[date, dict[tuple[str, str], float]] = {}
     for rate_date, from_currency, to_currency, rate in rate_rows:
@@ -309,11 +326,25 @@ def commit_preview(preview: ImportPreview, progress: ProgressCallback | None = N
     batch_ids: list[str] = []
     inserted_transaction_ids: list[int] = []
     total_rows = preview.row_count
-    with connect() as conn:
-        existing_vendors = {
-            row[0]
-            for row in conn.execute("SELECT canonical_vendor FROM vendors").fetchall()
-        }
+    with import_transaction() as conn:
+        receipt = conn.execute(
+            "SELECT batch_ids FROM bank_import_commits WHERE preview_id = ?",
+            [preview.preview_id],
+        ).fetchone()
+        if receipt:
+            return receipt[0]
+        # Preview flags can be stale when another import commits first. Bound the
+        # lookup to this upload and recompute duplicates under the write lock.
+        hashes = sorted({row["dedupe_hash"] for row in preview.rows})
+        existing_hashes: set[str] = set()
+        for offset in range(0, len(hashes), 500):
+            chunk = hashes[offset:offset + 500]
+            placeholders = ",".join("?" for _ in chunk)
+            existing_hashes.update(row[0] for row in conn.execute(
+                f"SELECT dedupe_hash FROM transactions WHERE dedupe_hash IN ({placeholders})",
+                chunk,
+            ).fetchall())
+        existing_vendors: set[str] = set()
         processed_rows = 0
         notify_progress(progress, "Importing rows", total_rows, 0)
         for file_number, file_preview in enumerate(preview.file_previews, start=1):
@@ -357,14 +388,38 @@ def commit_preview(preview: ImportPreview, progress: ProgressCallback | None = N
                 if preview.file_count == 1
                 else f"Importing {file_number}/{preview.file_count}: {file_preview.filename}"
             )
+            duplicate_count = 0
             for row in file_preview.rows:
+                is_duplicate = row["dedupe_hash"] in existing_hashes
+                if not is_duplicate:
+                    # Preserve explicit deletion/reimport: a claim alone is not a
+                    # source transaction. The table lock excludes concurrent writes.
+                    conn.execute(
+                        "DELETE FROM bank_import_dedupe_keys WHERE dedupe_hash = ?",
+                        [row["dedupe_hash"]],
+                    )
+                claimed = conn.execute(
+                    "INSERT INTO bank_import_dedupe_keys(dedupe_hash) VALUES (?) "
+                    "ON CONFLICT(dedupe_hash) DO NOTHING RETURNING dedupe_hash",
+                    [row["dedupe_hash"]],
+                ).fetchone()
+                is_duplicate = is_duplicate or claimed is None
+                existing_hashes.add(row["dedupe_hash"])
+                status = (
+                    "duplicate" if is_duplicate else "ready"
+                    if row["vendor_canonical"] and row["category_id"] is not None
+                    and None not in (row["amount_usd"], row["amount_pln"], row["amount_eur"])
+                    else "needs_review"
+                )
+                # Never mutate the saved preview: a rolled-back attempt can retry.
+                duplicate_count += int(is_duplicate)
                 conn.execute(
                     "INSERT INTO raw_import_rows(import_batch_id, row_number, raw_payload) VALUES (?, ?, ?)",
                     [batch_id, row["row_number"], json.dumps(row["raw_payload"])],
                 )
                 if row["vendor_canonical"] and row["vendor_canonical"] not in existing_vendors:
                     conn.execute(
-                        "INSERT INTO vendors(vendor_name, canonical_vendor) VALUES (?, ?)",
+                        "INSERT INTO vendors(vendor_name, canonical_vendor) VALUES (?, ?) ON CONFLICT(canonical_vendor) DO NOTHING",
                         [row["vendor_canonical"], row["vendor_canonical"]],
                     )
                     existing_vendors.add(row["vendor_canonical"])
@@ -411,20 +466,28 @@ def commit_preview(preview: ImportPreview, progress: ProgressCallback | None = N
                         transaction_date.strftime("%Y-%m"),
                         batch_id,
                         row["dedupe_hash"],
-                        row["status"],
+                        status,
                         row["transaction_type"],
-                        row["status"] == "needs_review",
+                        status == "needs_review",
                         datetime.now(),
                     ],
                 ).fetchone()
-                if inserted:
+                if inserted and not is_duplicate:
                     inserted_transaction_ids.append(inserted[0])
                 processed_rows += 1
                 if processed_rows == total_rows or processed_rows % 25 == 0:
                     notify_progress(progress, stage, total_rows, processed_rows)
+            conn.execute(
+                "UPDATE import_batches SET duplicate_count = ? WHERE import_batch_id = ?",
+                [duplicate_count, batch_id],
+            )
         if inserted_transaction_ids:
             notify_progress(progress, "Reconciling payables", total_rows, total_rows)
             _reconcile_open_payables_for_transactions(conn, inserted_transaction_ids)
+        conn.execute(
+            "INSERT INTO bank_import_commits(preview_id, batch_ids) VALUES (?, ?)",
+            [preview.preview_id, ",".join(batch_ids)],
+        )
     return ",".join(batch_ids)
 
 

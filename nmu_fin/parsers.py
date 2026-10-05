@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 from dataclasses import dataclass
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
@@ -56,6 +56,16 @@ def parse_iso_date(value: str) -> datetime:
     return datetime.strptime(value.strip(), "%Y%m%d")
 
 
+ALIOR_HEADERS = (
+    ["Posting Date", "Effective Date", "Counterparty Name", "Account Holder’s Name",
+     *[f"Payment Title (line {line})" for line in range(1, 5)],
+     "Operation Type", "Amount", "Currency", "Balance After Operation"],
+    ["Data księgowania", "Data efektywna", "Nazwa kontrahenta", "Nazwa właściciela rachunku",
+     *[f"Tytuł płatności (linia {line})" for line in range(1, 5)],
+     "Typ operacji", "Kwota", "Waluta", "Saldo po operacji"],
+)
+
+
 def detect_parser(filename: str, content: bytes) -> str:
     sample = content.decode("utf-8-sig", errors="ignore").splitlines()
     if not sample:
@@ -63,9 +73,7 @@ def detect_parser(filename: str, content: bytes) -> str:
     first = next(csv.reader([sample[0]]))
     if len(first) == 9 and first[4] in {"USD", "PLN", "EUR"}:
         return "ing_pl_business_v1"
-    if sample[0].startswith(
-        "Posting Date;Effective Date;Counterparty Name;Account Holder’s Name;Payment Title (line 1)"
-    ):
+    if next(csv.reader([sample[0]], delimiter=";")) in ALIOR_HEADERS:
         return "alior_business_v1"
     raise ValueError(f"No parser matched file: {filename}")
 
@@ -118,20 +126,38 @@ def parse_known_csv(filename: str, content: bytes) -> ParsedFile:
         data_rows = rows[1:]
         parsed_rows = []
         for index, row in enumerate(data_rows, start=1):
+            location = f"{filename}: CSV row {index + 1}"
+            if len(row) != len(header):
+                raise ValueError(
+                    f"{location}: expected {len(header)} fields, found {len(row)}. "
+                    "Ambiguous CSV quoting or separator; re-export or correct the source before importing."
+                )
+            try:
+                amount = parse_decimal(row[9])
+                balance = parse_decimal(row[11])
+                posting_date = parse_iso_date(row[0])
+                transaction_date = parse_iso_date(row[1])
+            except (ValueError, InvalidOperation) as exc:
+                raise ValueError(f"{location}: invalid date, amount or balance.") from exc
+            currency = row[10].strip()
+            if amount is None or not amount.is_finite() or balance is None or not balance.is_finite():
+                raise ValueError(f"{location}: amount and balance must be finite numbers.")
+            if len(currency) != 3 or not currency.isascii() or not currency.isalpha() or not currency.isupper():
+                raise ValueError(f"{location}: invalid currency code.")
             title_parts = [part.strip() for part in row[4:8] if part.strip()]
             description = " ".join(title_parts) if title_parts else row[8].strip()
             parsed_rows.append(
                 ParsedRow(
                     row_number=index,
-                    posting_date=parse_iso_date(row[0]),
-                    transaction_date=parse_iso_date(row[1]),
+                    posting_date=posting_date,
+                    transaction_date=transaction_date,
                     description=description,
                     operation_type_raw=row[8].strip() or None,
                     vendor_raw=row[2].strip() or None,
                     counterparty_account=None,
-                    amount_original=parse_decimal(row[9]) or Decimal("0"),
-                    currency_original=row[10].strip(),
-                    balance=parse_decimal(row[11]),
+                    amount_original=amount,
+                    currency_original=currency,
+                    balance=balance,
                     transaction_id=None,
                     raw_payload={
                         "row": row,

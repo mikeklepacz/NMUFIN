@@ -292,7 +292,12 @@ async def import_preview(request: Request, csv_file: list[UploadFile] = File(...
         for upload in csv_file
         if upload.filename
     ]
-    preview = build_preview(upload_sources, translate_preview_text=True)
+    try:
+        preview = build_preview(upload_sources, translate_preview_text=True)
+    except ValueError as exc:
+        response = imports_page(request, message=str(exc))
+        response.status_code = 400
+        return response
     app.state.previews[preview.preview_id] = preview
     return templates.TemplateResponse(
         request,
