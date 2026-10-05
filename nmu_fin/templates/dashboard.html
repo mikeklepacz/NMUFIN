@@ -47,29 +47,44 @@
   </form>
 </section>
 
+<section class="panel">
+  <p class="stat-label">Bank-reported balance{% if dashboard.bank_cash.partial %} · identifiable accounts only{% endif %}</p>
+  {% if dashboard.bank_cash.total is not none %}
+  <h2>{{ dashboard.bank_cash.total | money(currency) }}</h2>
+  <p class="muted compact">As of {{ dashboard.bank_cash.as_of }} · account balances valued in {{ currency }} at that day's stored reference rates. Transfers and FX stay in each bank account's original-currency balance.</p>
+  {% else %}
+  <h2>Balance unavailable</h2>
+  {% endif %}
+  {% for warning in dashboard.bank_cash.warnings %}<p class="muted compact">{{ warning }}</p>{% endfor %}
+  {% if dashboard.bank_cash.accounts %}
+  <div class="table-wrap"><table><thead><tr><th>Account</th><th>Balance in bank currency</th><th>Last posting</th></tr></thead><tbody>
+    {% for account in dashboard.bank_cash.accounts %}
+    <tr><td>{{ account.name }}</td><td>{{ account.balance | money(account.currency) }}</td><td>{{ account.last_posted }}</td></tr>
+    {% endfor %}
+  </tbody></table></div>
+  {% endif %}
+  {% if dashboard.bank_cash.matches %}
+  <p class="muted compact">Internal movements across all banks: {{ dashboard.bank_cash.matches.named_fx_pairs }} named FX pairs matched; {{ dashboard.bank_cash.matches.named_fx_needing_review }} named FX references need review. {{ dashboard.bank_cash.matches.referenced_own_pairs }} referenced own-account transfers matched; {{ dashboard.bank_cash.matches.referenced_own_needing_review }} need review. {{ dashboard.bank_cash.matches.other_exchange_legs }} other exchange legs have no named FX reference.</p>
+  {% endif %}
+</section>
+
 <section class="stats stats-dashboard">
   <article class="panel stat-card">
-    <p class="stat-label">Income</p>
+    <p class="stat-label">Filtered income</p>
     <h2>{{ dashboard.yearly_totals.income | money(currency) }}</h2>
   </article>
   <article class="panel stat-card">
-    <p class="stat-label">Expenses</p>
+    <p class="stat-label">Filtered expenses</p>
     <h2>{{ dashboard.yearly_totals.expenses | money(currency) }}</h2>
   </article>
-  <article class="panel stat-card">
-    <p class="stat-label">Net</p>
-    <h2>{{ dashboard.yearly_totals.net | money(currency) }}</h2>
-  </article>
-  <article class="panel stat-card">
-    <p class="stat-label">Avg Monthly Net</p>
-    <h2>{{ dashboard.yearly_totals.avg_monthly_net | money(currency) }}</h2>
-    <p class="muted compact">{{ dashboard.yearly_totals.months_covered }} months</p>
-  </article>
+</section>
+<section class="panel">
+  <p class="muted compact">Filtered transaction net for the selected years: <strong>{{ dashboard.yearly_totals.net | money(currency) }}</strong>. Average {{ dashboard.yearly_totals.avg_monthly_net | money(currency) }} over {{ dashboard.yearly_totals.months_covered }} months. These figures exclude currency exchanges{% if not include_transfers %} and marked transfers{% endif %}; they are not bank balances.</p>
 </section>
 
 <section class="grid dashboard-grid">
   <article class="panel chart-panel">
-    <h2>Cash Flow Lines</h2>
+    <h2>Filtered transaction lines</h2>
     {% if dashboard.cash_flow_chart_html %}
     <div class="chart-frame">
       {{ dashboard.cash_flow_chart_html | safe }}
@@ -77,20 +92,20 @@
     <div class="chart-legend chart-legend-centered">
       <span><i class="legend-swatch legend-income"></i>Income</span>
       <span><i class="legend-swatch legend-expenses"></i>Expenses</span>
-      <span><i class="legend-swatch legend-net"></i>Net cash flow</span>
+      <span><i class="legend-swatch legend-net"></i>Filtered transaction net</span>
     </div>
     {% else %}
-    <p class="muted">No monthly cash-flow data yet.</p>
+    <p class="muted">No monthly transaction data yet.</p>
     {% endif %}
   </article>
   <article class="panel chart-panel">
-    <h2>Bank Balance Line</h2>
+    <h2>Daily bank-reported balance{% if dashboard.bank_cash.partial %} · identifiable accounts only{% endif %}</h2>
     {% if dashboard.bank_balance_chart_html %}
     <div class="chart-frame">
       {{ dashboard.bank_balance_chart_html | safe }}
     </div>
     {% else %}
-    <p class="muted">Month-end balances will appear after supported bank CSV history is available.</p>
+    <p class="muted">Daily balances will appear when account identities, bank running balances, and currency rates are available.</p>
     {% endif %}
   </article>
 </section>
@@ -172,7 +187,7 @@
     <h2>Monthly Summary</h2>
     <div class="table-scroll">
       <table>
-        <thead><tr><th>Month</th><th>Income</th><th>Expenses</th><th>Net</th></tr></thead>
+        <thead><tr><th>Month</th><th>Filtered income</th><th>Filtered expenses</th><th>Filtered net</th></tr></thead>
           <tbody>
             {% for row in dashboard.monthly_summary %}
           <tr><td>{{ row.year_month }}</td><td>{{ row.income | money(currency) }}</td><td>{{ row.expenses | money(currency) }}</td><td>{{ row.net_cash_flow | money(currency) }}</td></tr>

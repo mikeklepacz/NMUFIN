@@ -7,7 +7,7 @@ from typing import Any
 import plotly.express as px
 
 from ..db import connect
-from .reports_balances import get_month_end_balances
+from .cash_balances import build_bank_cash_report
 NON_OPERATIONAL_CATEGORIES = {
     "Currency Exchange",
     "Transfers",
@@ -50,6 +50,7 @@ class DashboardData:
     vendor_share_chart_html: str
     annual_report: dict | None
     cash_snapshot: dict[str, Any] = field(default_factory=dict)
+    bank_cash: dict[str, Any] = field(default_factory=dict)
 
 
 def amount_column(currency: str) -> str:
@@ -604,6 +605,7 @@ def build_client_income_chart(monthly_rows, focus_client: str | None) -> tuple[s
 
 
 def build_bank_balance_chart(balance_rows: list[dict], display_currency: str) -> str:
+    balance_rows = [row for row in balance_rows if row["bank_balance"] is not None]
     if not balance_rows:
         return ""
     import pandas as pd
@@ -611,7 +613,7 @@ def build_bank_balance_chart(balance_rows: list[dict], display_currency: str) ->
     rows = pd.DataFrame(balance_rows)
     figure = px.line(
         rows,
-        x="year_month",
+        x="date",
         y="bank_balance",
         markers=True,
         color_discrete_sequence=["#8d6cab"],
@@ -794,6 +796,7 @@ def get_dashboard_data(
             """,
             combine_filters(year_start, year_end, bank_filter),
         ).fetchall()
+        bank_cash = build_bank_cash_report(conn, display_currency, year_start, year_end, bank_filter)
 
     if not client_rows.empty:
         client_rows["client_name"] = client_rows["raw_client_name"].map(simplify_client_name)
@@ -824,7 +827,7 @@ def get_dashboard_data(
         "avg_monthly_net": monthly_avg_net,
     }
 
-    balance_rows = get_month_end_balances(display_currency, year_start, year_end)
+    balance_rows = bank_cash["daily"]
     cash_flow_chart_html = build_cash_flow_chart(monthly_rows)
     bank_balance_chart_html = build_bank_balance_chart(balance_rows, display_currency)
     client_income_chart_html, client_yoy_chart_html = build_client_income_chart(client_rows, focus_client)
@@ -855,6 +858,7 @@ def get_dashboard_data(
         category_share_chart_html=category_share_chart_html,
         vendor_share_chart_html=vendor_share_chart_html,
         annual_report=annual_report,
+        bank_cash=bank_cash,
     )
 
 
