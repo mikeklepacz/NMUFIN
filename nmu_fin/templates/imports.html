@@ -3,7 +3,7 @@
 <section class="panel narrow">
   <h2>Import CSV</h2>
   {% if message %}
-  <p><strong>{{ message }}</strong></p>
+  <p id="import-validation-error" role="alert"><strong>{{ message }}</strong></p>
   {% endif %}
   <form method="post" action="/imports/preview" enctype="multipart/form-data" id="import-upload-form">
     <input type="file" id="csv-file-picker" name="csv_file" accept=".csv" multiple style="position:absolute;left:-9999px" />
@@ -163,7 +163,9 @@
       });
       const html = await response.text();
       if (!response.ok) {
-        throw new Error("Preview failed. Please try again.");
+        const errorPage = new DOMParser().parseFromString(html, "text/html");
+        const validationMessage = errorPage.getElementById("import-validation-error")?.textContent?.trim();
+        throw new Error(validationMessage || "Preview failed. Please try again.");
       }
       document.open();
       document.write(html);
